@@ -13,7 +13,9 @@
     font-family: "Segoe UI", Roboto, Arial, sans-serif;
     /* điện thoại: nhấn giữ không bôi đen chữ / không hiện menu Tìm kiếm, Sao chép */
     -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; -webkit-tap-highlight-color:transparent; }
-  input, textarea, #log, #chatLog { -webkit-user-select:text; user-select:text; -webkit-touch-callout:default; }
+  *, *::before, *::after { -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
+  canvas { -webkit-touch-callout:none; -webkit-user-select:none; user-select:none; }
+  input, textarea, #log, #log *, #chatLog, #chatLog * { -webkit-user-select:text; user-select:text; -webkit-touch-callout:default; }
   #bigAction, .bigbtn { touch-action:none; }
   #scene { position:fixed; inset:0; }
   #scene canvas { display:block; }
@@ -2109,7 +2111,18 @@ document.addEventListener('pointerdown', e => {
   if (b && !b.disabled) { e.preventDefault(); chargeStart(b.dataset.act); }
 });
 // nhấn giữ trên điện thoại: chặn menu chuột phải / menu ngữ cảnh ở nút tung
-document.addEventListener('contextmenu', e => { if (e.target.closest && e.target.closest('#bigAction, #players, .tItem, .emo')) e.preventDefault(); });
+// chặn ở mọi chỗ (bàn cờ 3D, khoảng trống quanh nút…), chỉ chừa ô nhập chữ, nhật ký và khung chat
+document.addEventListener('contextmenu', e => {
+  if (e.target.closest && e.target.closest('input, textarea, #log, #chatLog')) return;
+  e.preventDefault();
+});
+// một số điện thoại vẫn bôi đen khi nhấn giữ: xoá vùng chọn nếu nó không nằm trong ô cho phép chọn
+document.addEventListener('selectionchange', () => {
+  const s = getSelection(); if (!s || s.isCollapsed) return;
+  const n = s.anchorNode && (s.anchorNode.nodeType === 1 ? s.anchorNode : s.anchorNode.parentElement);
+  if (n && n.closest && n.closest('input, textarea, #log, #chatLog')) return;
+  s.removeAllRanges();
+});
 addEventListener('pointerup', chargeRelease);
 addEventListener('pointercancel', chargeRelease);
 addEventListener('blur', chargeRelease);
