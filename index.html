@@ -156,6 +156,8 @@
 
   #tileInfo { position:fixed; left:12px; bottom:12px; width:250px; z-index:6; display:none; }
   #tileInfo.show { display:block; }
+  #camBtn { display:none; position:fixed; right:10px; z-index:7; width:42px; height:42px; border-radius:50%; border:none; cursor:pointer;
+    background:rgba(255,255,255,.94); box-shadow:0 2px 8px rgba(0,0,0,.3); font-size:20px; }
   #toast { position:fixed; left:50%; top:16px; transform:translateX(-50%); background:rgba(20,20,20,.9); color:#fff; padding:10px 16px; border-radius:10px; z-index:15; font-weight:600; max-width:90vw; text-align:center; opacity:0; transition:opacity .25s; pointer-events:none; }
   #toast.show { opacity:1; }
   #hint { position:fixed; bottom:10px; left:50%; transform:translateX(-50%); color:#fff; text-shadow:0 1px 3px rgba(0,0,0,.7); font-size:12px; z-index:4; pointer-events:none; }
@@ -300,7 +302,11 @@
     #side { top:auto; bottom:8px; left:8px; right:8px; width:auto; max-height:42vh; }
     #logPanel.expanded #log { max-height:24vh; }
     #manage { max-height:18vh; }
-    #tileInfo { top:76px; bottom:auto; left:8px; }
+    /* Thông tin ô: bảng trượt từ dưới lên, nằm trên mọi nút */
+    #tileInfo { top:auto; bottom:8px; left:8px; right:8px; width:auto; z-index:15; max-height:62vh; overflow:auto;
+      box-shadow:0 -6px 30px rgba(0,0,0,.35); animation:sheetUp .22s ease-out; }
+    @keyframes sheetUp { from { transform:translateY(40px); opacity:0; } to { transform:none; opacity:1; } }
+    #camBtn { display:block; }
     #hint { display:none; }
   }
 </style>
@@ -318,6 +324,7 @@
   <button class="btn alt sm" id="logShow">📜 Nhật ký</button>
 </div>
 <div class="panel" id="tileInfo"></div>
+<button id="camBtn" title="Xem cả bàn cờ" onclick="setFollow(!cam.follow)">🗺️</button>
 <div id="bigAction"></div>
 <div id="toast"></div>
 <div id="cardOverlay"></div>
@@ -417,11 +424,14 @@ scene.background = new THREE.Color(0xcfeeff);
 scene.fog = new THREE.Fog(0xcfeeff, 60, 150);
 const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 500);
 // Camera lùi vừa đủ để thấy trọn bàn cờ theo tỉ lệ màn hình (điện thoại dọc cần lùi xa hơn)
+const CAM_DIR = new THREE.Vector3(0, 0.9, 0.44).normalize();
+function camDist() {
+  const t = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)), a = innerWidth / innerHeight;
+  return Math.min(58, Math.max(7.05 / (t * a), 8.5 / t));
+}
 function placeCamera() {
   if (innerWidth >= 760) { camera.position.set(0, 15, 14); return; }
-  const t = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)), a = innerWidth / innerHeight;
-  const d = Math.min(58, Math.max(7.4 / (t * a), 9 / t) * 1.04);
-  camera.position.copy(new THREE.Vector3(0, 0.87, 0.5).normalize().multiplyScalar(d));
+  camera.position.copy(CAM_DIR.clone().multiplyScalar(camDist()));
 }
 placeCamera();
 const controls = new THREE.OrbitControls(camera, renderer.domElement);
@@ -1126,8 +1136,27 @@ function animate() {
     activeRing.material.color.set(p.color);
     activeRing.scale.setScalar(1 + Math.sin(tSec * 5) * 0.15);
   } else activeRing.visible = false;
+  followCam();
   controls.update();
   renderer.render(scene, camera);
+}
+// Điện thoại: camera phóng to và bám theo quân cờ đang đi (bấm 🎯/🗺️ để đổi). Tự dừng khi người chơi tự kéo/xoay bàn.
+const cam = { follow: innerWidth < 760, userUntil: 0 };
+controls.addEventListener('start', () => { cam.userUntil = Infinity; });
+controls.addEventListener('end', () => { cam.userUntil = performance.now() + 5000; });
+const _goal = new THREE.Vector3(), _want = new THREE.Vector3();
+function followCam() {
+  if (!cam.follow || innerWidth >= 760 || performance.now() < cam.userUntil) return;
+  const p = cur(); if (!p || !p.mesh || state.phase === 'idle' || state.phase === 'over') return;
+  _goal.set(THREE.MathUtils.clamp(p.mesh.position.x, -3.6, 3.6), 0, THREE.MathUtils.clamp(p.mesh.position.z, -3.6, 3.6));
+  _want.copy(_goal).addScaledVector(CAM_DIR, camDist() * 0.55);
+  controls.target.lerp(_goal, 0.06);
+  camera.position.lerp(_want, 0.06);
+}
+function setFollow(on) {
+  cam.follow = on; cam.userUntil = 0;
+  if (!on) { placeCamera(); controls.target.set(0, 0, 0); controls.update(); }
+  const b = $('camBtn'); if (b) { b.textContent = on ? '🗺️' : '🎯'; b.title = on ? 'Xem cả bàn cờ' : 'Phóng to theo quân cờ'; }
 }
 let lastNarrow = innerWidth < 760, lastPortrait = innerWidth < innerHeight;
 addEventListener('resize', () => {
@@ -1470,6 +1499,7 @@ function renderPlayers() {
 function placeBig() {
   const b = $('bigAction');
   b.style.top = innerWidth < 760 ? ($('players').getBoundingClientRect().bottom + 10) + 'px' : '';
+  $('camBtn').style.top = ($('players').getBoundingClientRect().bottom + 12) + 'px';
   // thông báo nổi nằm ngay dưới nút lớn
   const r = b.getBoundingClientRect();
   $('toast').style.top = (r.height ? r.bottom + 10 : (innerWidth < 760 ? $('players').getBoundingClientRect().bottom + 10 : 16)) + 'px';
