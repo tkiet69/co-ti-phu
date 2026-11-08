@@ -1120,6 +1120,21 @@ function sfxDice() {
   [[0.36, 0.5], [0.4, 0.42], [0.62, 0.3], [0.66, 0.26], [0.8, 0.16], [0.83, 0.13], [0.91, 0.08], [0.95, 0.06]]
     .forEach(([d, v]) => click(t + d + Math.random() * 0.02, v, 1500 + Math.random() * 900)); // nảy trên bàn (2 viên)
 }
+// --- Còi xe cảnh sát: hú lên xuống nhanh, nhỏ dần khi xe chạy xa ---
+function sfxSiren(dur = 2.6) {
+  const ctx = SND.ctx; if (!ctx || !SND.sfx) return;
+  const t = ctx.currentTime + 0.02, g = ctx.createGain(), lp = ctx.createBiquadFilter();
+  lp.type = 'lowpass'; lp.frequency.value = 2600;
+  const oscs = [['sawtooth', 0], ['square', 4]].map(([type, det]) => {
+    const o = ctx.createOscillator(); o.type = type; o.detune.value = det * 10;
+    o.frequency.setValueAtTime(650, t);
+    for (let k = 0, tt = t; tt < t + dur; k++, tt += 0.22) o.frequency.linearRampToValueAtTime(k % 2 ? 650 : 1350, tt + 0.22); // "wiu wiu" nhanh
+    o.connect(lp); o.start(t); o.stop(t + dur + 0.05); return o;
+  });
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.07, t + 0.12);
+  g.gain.setValueAtTime(0.07, t + dur * 0.6); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  lp.connect(g); g.connect(SND.sfxGain);
+}
 // --- Bước đi: tiếng "lộc cộc" quân gỗ chạm bàn (cao độ đổi nhẹ mỗi bước) ---
 let stepN = 0;
 function sfxStep(big) {
@@ -1944,9 +1959,86 @@ async function moveSteps(p, n) {
 async function moveBack(p, n) { for (let k = 0; k < n; k++) { p.pos = (p.pos + 39) % 40; await hop(p, p.pos); } refreshUI(); }
 const moveTo = (p, target) => moveSteps(p, (target - p.pos + 40) % 40);
 async function goJail(p) {
+  const from = p.pos;
   p.pos = 10; p.inJail = true; p.jailTurns = 0; state.doubles = 0;
   log(`🚔 ${pn(p)} bị đưa vào tù!`);
-  await hop(p, 10, 700, 2.5); ringPulse(10, 0xff1744); refreshUI();
+  await policeRide(p, from); ringPulse(10, 0xff1744); refreshUI();
+}
+
+// ---------- Xe cảnh sát áp giải vào tù ----------
+function makePoliceCar() {
+  const g = new THREE.Group(), M = (c, o = {}) => new THREE.MeshStandardMaterial({ color: c, roughness: .45, ...o });
+  const add = (geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = true; g.add(m); return m; };
+  add(new THREE.BoxGeometry(0.72, 0.14, 0.34), M(0xfafafa), 0, 0.13, 0);                         // thân xe trắng
+  add(new THREE.BoxGeometry(0.73, 0.05, 0.345), M(0x1a237e), 0, 0.1, 0);                          // sọc xanh đậm
+  add(new THREE.BoxGeometry(0.36, 0.12, 0.3), M(0xfafafa), -0.04, 0.26, 0);                       // khoang lái
+  add(new THREE.BoxGeometry(0.37, 0.08, 0.305), M(0x263238, { metalness: .6, roughness: .15 }), -0.04, 0.26, 0); // kính
+  add(new THREE.BoxGeometry(0.02, 0.05, 0.26), M(0xfff59d, { emissive: 0xfff59d, emissiveIntensity: .8 }), 0.365, 0.15, 0); // đèn pha
+  const red = M(0xff1744, { emissive: 0xff1744, emissiveIntensity: 1 }), blue = M(0x2979ff, { emissive: 0x2979ff, emissiveIntensity: 1 });
+  add(new THREE.BoxGeometry(0.1, 0.03, 0.28), M(0x37474f), 0.02, 0.33, 0);                        // giá đèn
+  add(new THREE.BoxGeometry(0.09, 0.06, 0.12), red, 0.02, 0.37, -0.07);
+  add(new THREE.BoxGeometry(0.09, 0.06, 0.12), blue, 0.02, 0.37, 0.07);
+  const wheel = new THREE.CylinderGeometry(0.065, 0.065, 0.06, 14), wm = M(0x212121);
+  [[0.22, 0.17], [-0.22, 0.17], [0.22, -0.17], [-0.22, -0.17]].forEach(([x, z]) => { const w = add(wheel, wm, x, 0.065, z); w.rotation.x = Math.PI / 2; });
+  // quầng sáng đỏ/xanh dưới gầm (vòng mờ trên mặt bàn, không dùng đèn thật để khỏi giật hình)
+  const halo = new THREE.Mesh(new THREE.CircleGeometry(0.55, 24), new THREE.MeshBasicMaterial({ color: 0xff1744, transparent: true, opacity: .35, depthWrite: false }));
+  halo.rotation.x = -Math.PI / 2; halo.position.y = -0.17; g.add(halo);
+  g.userData = { red, blue, halo };
+  g.scale.setScalar(1.35);
+  return g;
+}
+// chỗ quân cờ ngồi: thùng sau của xe (không che đèn trên nóc)
+const _seat = new THREE.Vector3(), _Y = new THREE.Vector3(0, 1, 0);
+const carSeat = car => _seat.set(-0.27 * 1.35, 0.21 * 1.35, 0).applyAxisAngle(_Y, car.rotation.y).add(car.position);
+function flashPolice(car) {
+  const u = car.userData, on = Math.floor(performance.now() / 110) % 2 === 0;
+  u.red.emissiveIntensity = on ? 1.6 : 0.1; u.blue.emissiveIntensity = on ? 0.1 : 1.6;
+  u.halo.material.color.setHex(on ? 0xff1744 : 0x2979ff);
+}
+// Chạy xe theo các điểm pts trong ms mili-giây; rider (nếu có) ngồi trên nóc xe
+function driveAlong(car, pts, ms, rider) {
+  const seg = [], total = pts.slice(1).reduce((s, q, k) => { const l = q.distanceTo(pts[k]); seg.push(l); return s + l; }, 0) || 1;
+  return tween(ms, t => {
+    let s = t * total, k = 0;
+    while (k < seg.length - 1 && s > seg[k]) { s -= seg[k]; k++; }
+    const a = pts[k], b = pts[k + 1] || a, f = seg[k] ? Math.min(1, s / seg[k]) : 1;
+    car.position.lerpVectors(a, b, f);
+    if (b !== a) {
+      const want = Math.atan2(-(b.z - a.z), b.x - a.x);
+      let d = want - car.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d));
+      car.rotation.y += d * 0.35;
+    }
+    car.position.y = 0.2 + Math.abs(Math.sin(t * 40)) * 0.015; // rung nhẹ khi chạy nhanh
+    flashPolice(car);
+    if (rider) rider.mesh.position.copy(carSeat(car));
+  });
+}
+async function policeRide(p, from) {
+  sfxSiren();
+  const car = makePoliceCar(); scene.add(car);
+  // đường đi: theo các ô từ chỗ bị bắt về ô Nhà tù, chọn chiều ngắn hơn
+  const fwd = (10 - from + 40) % 40, dir = fwd <= 20 ? 1 : -1, n = Math.min(fwd, 40 - fwd);
+  const path = [];
+  for (let k = 0; k <= n; k++) { const g = tileGeom((from + dir * k + 40) % 40); path.push(new THREE.Vector3(g.x, 0.2, g.z)); }
+  // xe lao tới từ ngoài bàn cờ
+  const g0 = tileGeom(from), start = new THREE.Vector3(g0.x, 0.2, g0.z);
+  start.add(new THREE.Vector3(g0.x, 0, g0.z).setLength(6)); start.y = 0.2;
+  car.position.copy(start); car.rotation.y = Math.atan2(-(path[0].z - start.z), path[0].x - start.x);
+  await driveAlong(car, [start, path[0]], 380);
+  // quân cờ nhảy lên nóc xe
+  const a = p.mesh.position.clone(), roof = carSeat(car).clone();
+  await tween(200, t => { p.mesh.position.lerpVectors(a, roof, t); p.mesh.position.y += Math.sin(Math.PI * t) * 0.6; flashPolice(car); });
+  sfxStep();
+  if (path.length > 1) await driveAlong(car, path, Math.min(1150, 180 + n * 55), p);
+  // thả quân cờ vào tù
+  const b = tokenTarget(p.idx, 10), a2 = p.mesh.position.clone();
+  await tween(240, t => { p.mesh.position.lerpVectors(a2, b, t); p.mesh.position.y += Math.sin(Math.PI * t) * 0.7; flashPolice(car); });
+  sfxStep(true);
+  // xe phóng đi rồi biến mất (không chờ)
+  const gj = tileGeom(10), away = new THREE.Vector3(gj.x, 0, gj.z).setLength(14); away.y = 0.2;
+  driveAlong(car, [car.position.clone(), away], 650).then(() => {
+    scene.remove(car); car.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
+  });
 }
 async function pay(p, amt, cred) {
   if (amt <= 0 || p.bankrupt) return;
