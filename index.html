@@ -502,9 +502,10 @@ TILES.forEach((t,i) => { if (t.group) (GROUP_IDX[t.group] = GROUP_IDX[t.group] |
 const BUYABLE = t => t.type==='property' || t.type==='air' || t.type==='util';
 const PLAYER_COLORS = ['#e53935','#1e88e5','#43a047','#fbc02d','#8e24aa','#fb8c00','#ec407a','#00acc1','#6d4c41','#37474f'];
 const TOKEN_SHAPES = [
-  ['pawn', '♟️', 'Quân cờ'], ['car', '🚗', 'Xe hơi'], ['boat', '⛵', 'Thuyền buồm'], ['nonla', '👒', 'Nón lá'],
+  ['pawn', '♟️', 'Quân cờ'], ['car', '🚗', 'Xe hơi'], ['boat', '⛵', 'Thuyền buồm'],
   ['star', '⭐', 'Ngôi sao'], ['gem', '💎', 'Kim cương'], ['crown', '👑', 'Vương miện'], ['drum', '🥁', 'Trống đồng'],
 ];
+const isExclusive = s => !!(TOKEN_SHAPES.find(t => t[0] === s) || [])[3];
 const shapeIcon = s => (TOKEN_SHAPES.find(t => t[0] === s) || TOKEN_SHAPES[0])[1];
 const START_MONEY = 1500, GO_SALARY = 200, JAIL_FINE = 50;
 
@@ -1814,13 +1815,6 @@ function makeToken(color, shape = 'pawn', toScene = true) {
       const sail = new THREE.Shape(); sail.moveTo(0, 0); sail.lineTo(0.17, 0); sail.lineTo(0, 0.32); sail.lineTo(0, 0);
       add(new THREE.ShapeGeometry(sail), white, 0.01, 0.17);
       const flag = add(new THREE.BoxGeometry(0.08, 0.05, 0.005), m, 0.04, 0.52);
-      break;
-    }
-    case 'nonla': {
-      base(0.12);
-      add(new THREE.CylinderGeometry(0.09, 0.1, 0.12, 20), m, 0, 0.12);
-      add(new THREE.ConeGeometry(0.24, 0.2, 24), new THREE.MeshStandardMaterial({ color:0xf3d9a0, roughness:.8, flatShading:true }), 0, 0.28);
-      add(new THREE.TorusGeometry(0.15, 0.012, 6, 24), m, 0, 0.23, 0, Math.PI / 2);
       break;
     }
     case 'star': {
@@ -3481,7 +3475,7 @@ async function setup() {
         <div class="sBody">
           <input class="sName" type="text" id="nm${k}" value="${n}" maxlength="16" placeholder="Tên người chơi">
           <div class="seg" id="tp${k}"></div>
-          <div class="sLbl">Màu quân cờ</div>
+          <div class="sLbl" id="sl${k}">Màu quân cờ</div>
           <div class="sSw swatches" id="sw${k}">${PLAYER_COLORS.map(c => `<button type="button" class="sw" data-p="${k}" data-c="${c}" style="background:${c}" title="${c}"></button>`).join('')}</div>
         </div>
       </div>`).join('')}
@@ -3537,6 +3531,9 @@ async function setup() {
   const modeVal = () => document.querySelector('input[name=mode]:checked').value;
   const taken = (k, c) => pick.some((q, j) => j !== k && on(j) && q.color === c);
   const freeColor = k => PLAYER_COLORS.find(c => !taken(k, c));
+  const shapeTaken = (k, sh) => isExclusive(sh) && pick.some((q, j) => j !== k && on(j) && q.shape === sh);
+  const nextShape = (k, d) => { const n = TOKEN_SHAPES.length; let i = shapeIdx(k);
+    for (let t = 0; t < n; t++) { i = (i + d + n) % n; if (!shapeTaken(k, TOKEN_SHAPES[i][0])) return TOKEN_SHAPES[i][0]; } return pick[k].shape; };
   const online = () => where === 'online';
   const editable = k => !online() || (role !== 'guest' ? pick[k].type !== 'online' : pick[k].peer === myPeer && !!myPeer);
   const cleanName = s => String(s || '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 16);
@@ -3550,6 +3547,8 @@ async function setup() {
       const s = pick[k];
       // người vừa bật lại mà màu đã bị người khác lấy → tự đổi sang màu còn trống
       if (role !== 'guest' && on(k) && pick.some((q, j) => j < k && on(j) && q.color === s.color)) s.color = freeColor(k);
+      // nhân vật độc quyền đã có người lấy → chuyển sang quân khác
+      if (role !== 'guest' && on(k) && isExclusive(s.shape) && pick.some((q, j) => j < k && on(j) && q.shape === s.shape)) s.shape = nextShape(k, 1);
       ensureTok(k);
       const ed = editable(k), card = $('sp' + k);
       const waiting = online() && s.type === 'online' && !s.peer;
@@ -3561,6 +3560,7 @@ async function setup() {
       $('tb' + k).innerHTML = team ? teamBadge(k % 2 === 0 ? 'A' : 'B') : '';
       const [, ic, lb] = TOKEN_SHAPES[shapeIdx(k)];
       $('sn' + k).textContent = `${ic} ${lb}`;
+      $('sl' + k).textContent = isExclusive(s.shape) ? 'Màu người chơi (vòng đế & nhà)' : 'Màu quân cờ';
       $('sd' + k).querySelectorAll('i').forEach((d, j) => d.classList.toggle('on', j === shapeIdx(k)));
       card.querySelectorAll('.arrow').forEach(a => a.style.display = ed ? '' : 'none');
       const nm = $('nm' + k);
@@ -3615,7 +3615,8 @@ async function setup() {
       if (s.type !== 'online' || !s.peer) return;
       const g = guests.find(x => x.peer === s.peer).presence;
       s.name = cleanName(g.name) || 'Khách';
-      if (TOKEN_SHAPES.some(t => t[0] === g.shape)) s.shape = g.shape;
+      if (TOKEN_SHAPES.some(t => t[0] === g.shape) && !shapeTaken(k, g.shape)) s.shape = g.shape;
+      else if (shapeTaken(k, s.shape)) s.shape = nextShape(k, 1);
       if (PLAYER_COLORS.includes(g.color) && !taken(k, g.color)) s.color = g.color;
       else if (taken(k, s.color)) s.color = freeColor(k);
     });
@@ -3719,9 +3720,9 @@ async function setup() {
     syncAll();
   });
   ov.querySelectorAll('.arrow').forEach(b => b.onclick = () => {
-    const k = +b.dataset.k, n = TOKEN_SHAPES.length;
+    const k = +b.dataset.k;
     if (!editable(k)) return;
-    pick[k].shape = TOKEN_SHAPES[(shapeIdx(k) + +b.dataset.d + n) % n][0];
+    pick[k].shape = nextShape(k, +b.dataset.d);
     if (role === 'guest') { myPrefs.shape = pick[k].shape; guestPresence(); }
     syncAll();
   });
