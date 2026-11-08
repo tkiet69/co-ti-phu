@@ -41,6 +41,11 @@
   .btn:disabled { opacity:.35; cursor:not-allowed; }
   #manage { overflow:auto; max-height:34vh; }
   #manage h4 { margin:0 0 6px; font-size:14px; }
+  .mgHead { display:flex; align-items:center; gap:6px; font-size:14px; cursor:pointer; user-select:none; margin-bottom:4px; }
+  .mgHead .grow { flex:1; }
+  #manage.collapsed { padding-top:6px; padding-bottom:6px; overflow:hidden; }
+  #manage.collapsed .mgHead { margin-bottom:0; }
+  #manage.collapsed .mgBody { display:none; }
   .prow { display:flex; align-items:center; gap:6px; padding:4px 0; border-top:1px solid #eee; font-size:13px; flex-wrap:wrap; }
   .prow .nm { flex:1; min-width:110px; display:flex; align-items:center; gap:5px; }
   .chip { width:10px; height:16px; border-radius:2px; flex:none; }
@@ -130,9 +135,20 @@
   @keyframes bigIn { from { transform:scale(.6); opacity:0; } to { transform:none; opacity:1; } }
   @keyframes bigPulse { 0%,100% { box-shadow:0 8px 0 rgba(0,0,0,.25), 0 14px 30px rgba(0,0,0,.35), 0 0 0 0 rgba(255,82,82,.6); }
     50% { box-shadow:0 8px 0 rgba(0,0,0,.25), 0 14px 30px rgba(0,0,0,.35), 0 0 0 16px rgba(255,82,82,0); } }
+  /* Thanh lực khi giữ nút tung: xanh → đỏ */
+  #powerBar { position:fixed; left:50%; transform:translateX(-50%); z-index:9; width:260px; height:22px; border-radius:999px; display:none;
+    background:rgba(0,0,0,.55); border:3px solid #fff; box-shadow:0 4px 14px rgba(0,0,0,.4); overflow:hidden; pointer-events:none; }
+  #powerBar.show { display:block; }
+  #powerFill { height:100%; width:0; background:hsl(120,85%,48%); }
+  #powerTxt { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:900; color:#fff;
+    text-shadow:0 1px 2px rgba(0,0,0,.8); letter-spacing:1px; }
   @media (max-width: 760px) {
-    .bigbtn { font-size:20px; padding:14px 26px; min-width:240px; }
-    .bigbtn .bi { font-size:26px; }
+    /* nút tung trên điện thoại: 70% kích thước */
+    .bigbtn { font-size:14px; padding:9px 18px; min-width:168px; border-width:3px; }
+    .bigbtn .bi { font-size:18px; }
+    .bigbtn .row { gap:8px; }
+    .bigbtn small { font-size:8px; }
+    #powerBar { width:200px; height:18px; }
   }
 
   /* Lá bài Cơ hội / Khí vận */
@@ -411,6 +427,7 @@
 <div id="cardOverlay"></div>
 <div id="hint">Space: tung xúc xắc / kết thúc lượt · Kéo để xoay · Cuộn để zoom · Bấm vào ô để xem thông tin</div>
 <div id="copyMark">© kietntt</div>
+<div id="powerBar"><div id="powerFill"></div><span id="powerTxt">Lực 0%</span></div>
 <div id="modal"><div id="modalBox"></div></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -495,7 +512,8 @@ const FONT = '"Segoe UI", Roboto, Arial, sans-serif';
 // ================== THREE.JS ==================
 const container = $('scene');
 const renderer = new THREE.WebGLRenderer({ antialias:true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+// điện thoại màn hình mật độ cao (DPR 3): dùng tới 3 để hình không bị mờ
+renderer.setPixelRatio(Math.min(devicePixelRatio, innerWidth < 760 ? 3 : 2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -560,9 +578,9 @@ function tileGeom(i) {
 
 function tileTexture(t) {
   const corner = ['go','jail','parking','gotojail'].includes(t.type);
-  const W = corner ? 400 : 200, H = 400;
-  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
-  const ctx = cv.getContext('2d');
+  const W = corner ? 400 : 200, H = 400, S = 1.6;              // vẽ ở độ phân giải cao hơn 1,6 lần để chữ trên ô sắc nét khi phóng to
+  const cv = document.createElement('canvas'); cv.width = W * S; cv.height = H * S;
+  const ctx = cv.getContext('2d'); ctx.scale(S, S);
   ctx.fillStyle = '#f6f1e1'; ctx.fillRect(0,0,W,H);
   ctx.strokeStyle = '#2b2b2b'; ctx.lineWidth = 5; ctx.strokeRect(2,2,W-4,H-4);
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#1d1d1f';
@@ -1143,6 +1161,21 @@ function sfxDice() {
   [[0.36, 0.5], [0.4, 0.42], [0.62, 0.3], [0.66, 0.26], [0.8, 0.16], [0.83, 0.13], [0.91, 0.08], [0.95, 0.06]]
     .forEach(([d, v]) => click(t + d + Math.random() * 0.02, v, 1500 + Math.random() * 900)); // nảy trên bàn (2 viên)
 }
+// --- Máy bay: tiếng động cơ phản lực gầm lên khi cất cánh rồi nhỏ dần ---
+function sfxPlane(dur = 3.4) {
+  const ctx = SND.ctx; if (!ctx || !SND.sfx) return;
+  const t = ctx.currentTime + 0.02;
+  const s = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+  s.buffer = SND.noise; s.loop = true; f.type = 'bandpass'; f.Q.value = 0.8;
+  f.frequency.setValueAtTime(300, t); f.frequency.linearRampToValueAtTime(900, t + dur * 0.35); f.frequency.linearRampToValueAtTime(1400, t + dur * 0.6); f.frequency.linearRampToValueAtTime(500, t + dur);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.16, t + 0.5); g.gain.setValueAtTime(0.16, t + dur * 0.7); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  s.connect(f); f.connect(g); g.connect(SND.sfxGain); s.start(t); s.stop(t + dur + 0.05);
+  const o = ctx.createOscillator(), og = ctx.createGain(); o.type = 'sawtooth';
+  o.frequency.setValueAtTime(110, t); o.frequency.linearRampToValueAtTime(190, t + dur * 0.5); o.frequency.linearRampToValueAtTime(120, t + dur);
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 500;
+  og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(0.05, t + 0.5); og.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(lp); lp.connect(og); og.connect(SND.sfxGain); o.start(t); o.stop(t + dur + 0.05);
+}
 // --- Còi xe cảnh sát: hú lên xuống nhanh, nhỏ dần khi xe chạy xa ---
 function sfxSiren(dur = 2.6) {
   const ctx = SND.ctx; if (!ctx || !SND.sfx) return;
@@ -1266,18 +1299,23 @@ function setSfx(on) {
 addEventListener('DOMContentLoaded', () => { setMusic(SND.music); setSfx(SND.sfx); });
 if (document.readyState !== 'loading') setTimeout(() => { setMusic(SND.music); setSfx(SND.sfx); }, 0);
 
-async function rollDice() {
+// power 0..1 (giữ nút càng lâu càng mạnh): chỉ đổi cách xúc xắc bay/xoay, KHÔNG đổi kết quả (kết quả từ rng chung)
+async function rollDice(power = 0.4) {
+  power = Math.max(0, Math.min(1, power));
   sfxDice();
   const v = [1 + Math.floor(rng()*6), 1 + Math.floor(rng()*6)];
+  const dur = 750 + power * 950, height = 1.4 + power * 3.4, bounces = 2 + power * 2;
+  state.diceFocusUntil = performance.now() + dur + 900; // cam 🎯 nhìn vào xúc xắc lúc tung
   await Promise.all(dice.map((d, k) => {
     const [fx, fz] = FACE_ROT[v[k]], fy = Math.random()*Math.PI*2;
-    const spin = () => (2 + Math.floor(Math.random()*3)) * 2*Math.PI * (Math.random() < .5 ? -1 : 1);
+    const spin = () => (2 + Math.floor(Math.random()*3 + power*5)) * 2*Math.PI * (Math.random() < .5 ? -1 : 1);
     const sx = spin(), sy = spin(), sz = spin();
-    const x0 = (k ? 0.75 : -0.75) + (Math.random()-.5)*0.5, z0 = 1.3 + Math.random()*0.7;
-    return tween(1000, t => {
+    const x0 = (k ? 0.75 : -0.75) + (Math.random()-.5)*(0.5 + power*0.8), z0 = 1.3 + Math.random()*0.7;
+    const xs = x0 + (k ? 1 : -1) * power * 0.9, zs = z0 + 1.2 * power;   // lực mạnh: lăn từ xa hơn
+    return tween(dur, t => {
       const e = 1 - Math.pow(1-t, 3);
       d.rotation.set(fx + sx*(1-e), fy + sy*(1-e), fz + sz*(1-e));
-      d.position.set(x0, 0.35 + Math.abs(Math.sin(e*Math.PI*2.5))*(1-e)*2.4, z0);
+      d.position.set(xs + (x0 - xs)*e, 0.35 + Math.abs(Math.sin(e*Math.PI*bounces))*(1-e)*height, zs + (z0 - zs)*e);
     });
   }));
   return v;
@@ -1510,6 +1548,13 @@ function followCam() {
   const p = cur(); if (!p || !p.mesh || state.phase === 'idle' || state.phase === 'over') return;
   const px = p.mesh.position.x, pz = p.mesh.position.z, dir = baseDir();
   if (cam.mode === 'follow') {
+    if (performance.now() < (state.diceFocusUntil || 0)) {
+      // đang tung: đưa xúc xắc vào giữa màn hình
+      _goal.set((dice[0].position.x + dice[1].position.x) / 2, 0, (dice[0].position.z + dice[1].position.z) / 2);
+      _want.copy(_goal).addScaledVector(dir, baseDist() * 0.6);
+      controls.target.lerp(_goal, 0.12); camera.position.lerp(_want, 0.12);
+      return;
+    }
     _goal.set(THREE.MathUtils.clamp(px, -3.6, 3.6), 0, THREE.MathUtils.clamp(pz, -3.6, 3.6));
     _want.copy(_goal).addScaledVector(dir, baseDist() * 0.55);
   } else {
@@ -1896,8 +1941,10 @@ function placeBig() {
   $('camBtn').style.top = mobile ? (plBottom + 12) + 'px' : '';
   $('sndBox').style.top = mobile ? (plBottom + 62) + 'px' : '';
   $('copyMark').style.top = mobile ? (plBottom + 4) + 'px' : '';
+  // thanh lực: máy tính → ngay dưới nút; điện thoại (nút ở dưới) → ngay trên nút
+  const r = b.getBoundingClientRect(), pb = $('powerBar');
+  if (pb) pb.style.top = (mobile ? r.top - 30 : r.bottom + 10) + 'px';
   // thông báo nổi: máy tính → ngay dưới nút lớn; điện thoại → ngay dưới thanh người chơi
-  const r = b.getBoundingClientRect();
   $('toast').style.top = (mobile ? plBottom + 10 : r.height ? r.bottom + 10 : 16) + 'px';
 }
 addEventListener('resize', placeBig);
@@ -1919,7 +1966,7 @@ function renderActions() {
   if (state.phase === 'order') {
     const wait = w && w.kinds.includes('orderroll') && isLocal(p) && !state.sent;
     el.innerHTML = `<div class="turn">🎲 Tung xúc xắc chọn thứ tự đi</div><div class="muted">${pn(p)}${p.isBot ? ' 🤖' : ''} ${wait ? 'hãy tung xúc xắc (Space)' : 'đang tung…'}. Ai tung cao nhất sẽ đi trước.</div>${waitNote}`;
-    setBig(wait ? `<button class="bigbtn roll" data-act="orderroll"><span class="row"><span class="bi">🎲</span>TUNG CHỌN LƯỢT</span><small>⌨️ SPACE</small></button>` : '');
+    setBig(wait ? `<button class="bigbtn roll" data-act="orderroll"><span class="row"><span class="bi">🎲</span>TUNG CHỌN LƯỢT</span><small>✊ GIỮ ĐỂ LẤY LỰC · SPACE</small></button>` : '');
     el.classList.toggle('hasBtns', !!el.querySelector('button')); mg.style.display = 'none'; placeBig(); return;
   }
   let h = `<div class="turn">Lượt của ${pn(p)}${p.isBot ? ' 🤖' : ''}${NET.online && isLocal(p) ? ' <span class="youTag">BẠN</span>' : ''}</div>`;
@@ -1931,7 +1978,7 @@ function renderActions() {
   else {
     h += '<div class="btns">';
     if (state.phase === 'roll') {
-      big = `<button class="bigbtn roll" data-act="roll" ${dis}><span class="row"><span class="bi">🎲</span>${state.doubles > 0 ? 'TUNG TIẾP (ĐÔI!)' : 'TUNG XÚC XẮC'}</span><small>⌨️ SPACE</small></button>`;
+      big = `<button class="bigbtn roll" data-act="roll" ${dis}><span class="row"><span class="bi">🎲</span>${state.doubles > 0 ? 'TUNG TIẾP (ĐÔI!)' : 'TUNG XÚC XẮC'}</span><small>✊ GIỮ ĐỂ LẤY LỰC · SPACE</small></button>`;
       if (p.inJail) {
         h += `<button class="btn alt" data-act="payjail" ${dis || (p.money < JAIL_FINE ? 'disabled' : '')}>Trả ${fmt(JAIL_FINE)} ra tù</button>`;
         if (p.jailCards) h += `<button class="btn alt" data-act="usecard" ${dis}>Dùng thẻ ra tù</button>`;
@@ -1971,16 +2018,26 @@ function renderActions() {
       ${canAct ? `<button class="btn sm alt" data-act="selljail">Bán +${fmt(JAIL_CARD_PRICE)}</button>` : ''}</div>` : '';
     const giveRow = mate ? `<div class="prow"><span class="nm">💸 Chuyển cho ${pn(mate)}</span>${[50, 100, 200].map(a =>
       `<button class="btn sm" data-act="give" data-i="${a}" ${!canAct || p.money < a ? 'disabled' : ''}>${fmt(a)}</button>`).join('')}</div>` : '';
-    mg.innerHTML = `<h4>Tài sản của bạn</h4>${giveRow}${jailRow}${rows}`;
+    // khung tài sản thu gọn được (giống nhật ký): điện thoại mặc định thu gọn để nút tung nằm thấp
+    mg.innerHTML = `<div class="mgHead" data-mg="1"><b>🏠 Tài sản của bạn</b><span class="muted">${mine.length} ô${p.jailCards ? ' · 🎫' + p.jailCards : ''}</span><span class="grow"></span><button class="iconbtn" title="${MG.open ? 'Thu gọn' : 'Mở ra'}">${MG.open ? '▴' : '▾'}</button></div>
+      <div class="mgBody">${giveRow}${jailRow}${rows}</div>`;
+    mg.classList.toggle('collapsed', !MG.open);
   } else mg.style.display = 'none';
   placeBig();
 }
 function refreshUI() { renderPlayers(); renderActions(); }
+const MG = { open: innerWidth >= 760 };
+document.addEventListener('click', e => {
+  if (!e.target.closest || !e.target.closest('[data-mg]')) return;
+  MG.open = !MG.open; renderActions();
+});
 
 // Nút bấm chỉ GỬI lựa chọn; humanTurn() trên mọi máy nhận và áp dụng cùng lúc
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if (!b || b.disabled) return;
   if (b.dataset.act === 'botify') { botifyWaiting(); return; }
+  // nút tung đã xử lý bằng "giữ để lấy lực" → bỏ cú click đi kèm lúc thả tay
+  if ((b.dataset.act === 'roll' || b.dataset.act === 'orderroll') && performance.now() - CHARGE.released < 600) return;
   const w = state.waiting; if (!w) return;
   const p = state.players[w.pi];
   if (!w.kinds.includes(b.dataset.act)) return;
@@ -1996,7 +2053,7 @@ async function humanTurn(p) {
     }
     const i = m.v;
     switch (m.k) {
-      case 'roll': if (state.phase === 'roll') { await rollAction(); if (p.bankrupt) { nextTurn(); return; } } break;
+      case 'roll': if (state.phase === 'roll') { await rollAction(typeof i === 'number' ? i : 0.35); if (p.bankrupt) { nextTurn(); return; } } break;
       case 'end': if (state.phase === 'end') { nextTurn(); return; } break;
       case 'payjail': if (p.inJail && state.phase === 'roll' && p.money >= JAIL_FINE) { p.money -= JAIL_FINE; p.inJail = false; p.jailTurns = 0; log(`${pn(p)} trả ${fmt(JAIL_FINE)} để ra tù`); } break;
       case 'usecard': if (p.inJail && state.phase === 'roll' && p.jailCards) { p.jailCards--; p.inJail = false; p.jailTurns = 0; log(`${pn(p)} dùng thẻ ra tù miễn phí`); } break;
@@ -2016,8 +2073,46 @@ async function humanTurn(p) {
   }
 }
 
-// Không để Space "bấm lại" nút đang được focus (tránh bấm 2 lần)
-document.addEventListener('keyup', e => { if ((e.code === 'Space' || e.key === ' ') && e.target.tagName === 'BUTTON') e.preventDefault(); });
+// ---------- Giữ để lấy lực tung xúc xắc (0 → tối đa sau 1,5 giây, thanh xanh → đỏ) ----------
+const CHARGE = { on: false, start: 0, power: 0, act: null, released: 0 };
+const POWER_MS = 1500;
+function chargeStart(act) {
+  if (CHARGE.on) return;
+  const w = state.waiting; if (!w || !w.kinds.includes(act)) return;
+  const p = state.players[w.pi]; if (!isLocal(p) || state.sent) return;
+  Object.assign(CHARGE, { on: true, start: performance.now(), power: 0, act });
+  $('powerBar').classList.add('show'); placeBig();
+  const step = () => {
+    if (!CHARGE.on) return;
+    CHARGE.power = Math.min(1, (performance.now() - CHARGE.start) / POWER_MS);
+    const fill = $('powerFill'); fill.style.width = (CHARGE.power * 100) + '%';
+    fill.style.background = `hsl(${Math.round((1 - CHARGE.power) * 120)}, 85%, 48%)`;  // xanh lá → vàng → đỏ
+    $('powerTxt').textContent = CHARGE.power >= 1 ? 'TỐI ĐA!' : 'Lực ' + Math.round(CHARGE.power * 100) + '%';
+    requestAnimationFrame(step);
+  };
+  step();
+}
+function chargeRelease() {
+  if (!CHARGE.on) return;
+  CHARGE.on = false; CHARGE.released = performance.now();
+  CHARGE.power = Math.min(1, (CHARGE.released - CHARGE.start) / POWER_MS); // tính theo thời gian giữ thật
+  $('powerBar').classList.remove('show');
+  const w = state.waiting; if (!w) return;
+  sendInput(state.players[w.pi], CHARGE.act, Math.round(CHARGE.power * 100) / 100);
+}
+document.addEventListener('pointerdown', e => {
+  const b = e.target.closest && e.target.closest('#bigAction [data-act="roll"], #bigAction [data-act="orderroll"]');
+  if (b && !b.disabled) { e.preventDefault(); chargeStart(b.dataset.act); }
+});
+addEventListener('pointerup', chargeRelease);
+addEventListener('pointercancel', chargeRelease);
+addEventListener('blur', chargeRelease);
+// Không để Space "bấm lại" nút đang được focus (tránh bấm 2 lần); thả Space = tung xúc xắc
+document.addEventListener('keyup', e => {
+  if (e.code !== 'Space' && e.key !== ' ') return;
+  if (e.target.tagName === 'BUTTON') e.preventDefault();
+  chargeRelease();
+});
 // Phím Space: tung xúc xắc / kết thúc lượt / bóc thẻ
 document.addEventListener('keydown', e => {
   if (e.code !== 'Space' && e.key !== ' ') return;
@@ -2031,7 +2126,10 @@ document.addEventListener('keydown', e => {
     return;
   }
   if ($('modal').classList.contains('show')) return;
-  const btn = document.querySelector('#bigAction [data-act="orderroll"]') || document.querySelector('#bigAction [data-act="roll"]:not([disabled])') || document.querySelector('#bigAction [data-act="end"]:not([disabled])');
+  // nút tung: giữ Space để lấy lực, thả ra mới tung
+  const rollBtn = document.querySelector('#bigAction [data-act="orderroll"]') || document.querySelector('#bigAction [data-act="roll"]:not([disabled])');
+  if (rollBtn) { chargeStart(rollBtn.dataset.act); return; }
+  const btn = document.querySelector('#bigAction [data-act="end"]:not([disabled])');
   if (btn) btn.click();
 });
 
@@ -2051,6 +2149,69 @@ async function goJail(p) {
   p.pos = 10; p.inJail = true; p.jailTurns = 0; state.doubles = 0;
   log(`🚔 ${pn(p)} bị đưa vào tù!`);
   await policeRide(p, from); ringPulse(10, 0xff1744); refreshUI();
+}
+
+// ---------- Máy bay chở quân cờ (thẻ "Bay vào TP. Hồ Chí Minh") ----------
+function makePlane() {
+  const g = new THREE.Group(), M = (c, o = {}) => new THREE.MeshStandardMaterial({ color: c, roughness: .4, ...o });
+  const add = (geo, mat, x, y, z, rx = 0, ry = 0, rz = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.set(rx, ry, rz); m.castShadow = true; g.add(m); return m; };
+  const white = M(0xfafafa), red = M(0xe53935), blue = M(0x1565c0), glass = M(0x263238, { metalness: .5, roughness: .15 });
+  add(new THREE.CylinderGeometry(0.085, 0.07, 0.72, 14), white, 0, 0, 0, 0, 0, Math.PI / 2);        // thân máy bay (trục x)
+  add(new THREE.SphereGeometry(0.085, 14, 10), white, 0.36, 0, 0).scale.set(1.3, 1, 1);             // mũi
+  add(new THREE.ConeGeometry(0.07, 0.2, 12), white, -0.45, 0.02, 0, 0, 0, Math.PI / 2);              // đuôi thon
+  add(new THREE.CylinderGeometry(0.087, 0.087, 0.06, 14, 1, true), red, 0.05, 0, 0, 0, 0, Math.PI / 2); // sọc đỏ
+  add(new THREE.BoxGeometry(0.16, 0.018, 0.86), blue, 0.02, -0.02, 0);                                // cánh chính
+  add(new THREE.BoxGeometry(0.08, 0.014, 0.32), blue, -0.42, 0.03, 0);                                // cánh đuôi ngang
+  add(new THREE.BoxGeometry(0.12, 0.16, 0.014), red, -0.44, 0.1, 0);                                  // đuôi đứng
+  add(new THREE.BoxGeometry(0.1, 0.035, 0.12), glass, 0.3, 0.05, 0);                                  // kính buồng lái
+  for (let k = 0; k < 5; k++) [-1, 1].forEach(s => add(new THREE.BoxGeometry(0.03, 0.025, 0.004), glass, 0.18 - k * 0.09, 0.03, s * 0.084)); // cửa sổ
+  [-1, 1].forEach(s => add(new THREE.CylinderGeometry(0.03, 0.03, 0.1, 10), M(0x90a4ae), 0.06, -0.05, s * 0.22, 0, 0, Math.PI / 2)); // động cơ
+  [0.18, -0.12].forEach(x => add(new THREE.CylinderGeometry(0.02, 0.02, 0.02, 8), M(0x212121), x, -0.1, 0, Math.PI / 2)); // bánh đáp
+  g.scale.setScalar(1.3);
+  return g;
+}
+// Bay: máy bay đáp xuống cạnh quân cờ, quân cờ lên lưng máy bay, cất cánh vòng cung tới ô đích, hạ cánh, thả quân cờ
+async function flyTo(p, target) {
+  if (target < p.pos) { p.money += GO_SALARY; moneyFx(p, GO_SALARY); log(`${pn(p)} bay qua Xuất phát, nhận ${fmt(GO_SALARY)}`); renderPlayers(); }
+  const from = p.pos; p.pos = target;
+  const plane = makePlane(); scene.add(plane);
+  const gA = tileGeom(from), gB = tileGeom(target);
+  const A = new THREE.Vector3(gA.x, 0.32, gA.z), B = new THREE.Vector3(gB.x, 0.32, gB.z);
+  const seat = pl => new THREE.Vector3(0.02, 0.15, 0).applyAxisAngle(_Y, pl.rotation.y).add(pl.position);
+  const face = (pl, a, b) => { pl.rotation.y = Math.atan2(-(b.z - a.z), b.x - a.x); };
+  sfxPlane(3.4);
+  // 1) sà xuống cạnh quân cờ
+  const S = A.clone().add(new THREE.Vector3(gA.x, 0, gA.z).setLength(5)); S.y = 3.5;
+  face(plane, S, A);
+  await tween(650, t => { const e = 1 - (1 - t) ** 2; plane.position.lerpVectors(S, A, e); plane.rotation.z = -0.35 * (1 - e); });
+  // 2) quân cờ nhảy lên lưng máy bay
+  const a0 = p.mesh.position.clone(), s0 = seat(plane).clone();
+  await tween(220, t => { p.mesh.position.lerpVectors(a0, s0, t); p.mesh.position.y += Math.sin(Math.PI * t) * 0.5; });
+  sfxStep();
+  // 3) cất cánh, bay vòng cung lên cao rồi hạ cánh ở ô đích
+  face(plane, A, B);
+  const dist = A.distanceTo(B), top = 2.6 + dist * 0.12, dur = 1100 + dist * 45;
+  const mid = A.clone().lerp(B, 0.5); mid.y = top;
+  const P = (t, out) => out.set(0, 0, 0).addScaledVector(A, (1 - t) ** 2).addScaledVector(mid, 2 * (1 - t) * t).addScaledVector(B, t * t);
+  const cur = new THREE.Vector3(), nxt = new THREE.Vector3();
+  await tween(dur, t => {
+    const u = t < .5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2;   // nhanh dần rồi chậm dần
+    P(u, cur); P(Math.min(1, u + 0.02), nxt);
+    plane.position.copy(cur);
+    plane.rotation.z = Math.atan2(nxt.y - cur.y, Math.hypot(nxt.x - cur.x, nxt.z - cur.z)) * 0.9; // ngóc đầu / chúi mũi
+    p.mesh.position.copy(seat(plane));
+  });
+  plane.position.copy(B); plane.rotation.z = 0;
+  // 4) quân cờ nhảy xuống ô đích
+  const b0 = p.mesh.position.clone(), b1 = tokenTarget(p.idx, target);
+  await tween(240, t => { p.mesh.position.lerpVectors(b0, b1, t); p.mesh.position.y += Math.sin(Math.PI * t) * 0.6; });
+  sfxStep(true);
+  // 5) máy bay cất cánh bay đi (không chờ)
+  const away = B.clone().add(new THREE.Vector3(gB.x, 0, gB.z).setLength(12)); away.y = 6;
+  face(plane, B, away);
+  tween(900, t => { plane.position.lerpVectors(B, away, t * t); plane.rotation.z = 0.35 * Math.min(1, t * 3); })
+    .then(() => { scene.remove(plane); plane.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); });
+  refreshUI();
 }
 
 // ---------- Xe cảnh sát áp giải vào tù ----------
@@ -2227,7 +2388,7 @@ function repairs(p, perHouse, perHotel) {
 
 function cardsChance() { return [
   { text:'Tiến thẳng tới ô Xuất phát. Nhận $200.', act: async p => { await moveTo(p, 0); } },
-  { text:'Bay vào TP. Hồ Chí Minh.', act: async p => { await moveTo(p, 39); await land(p); } },
+  { text:'Bay vào TP. Hồ Chí Minh.', act: async p => { await flyTo(p, 39); await land(p); } },
   { text:'Đi du lịch Phố cổ Hội An. Nếu đi qua Xuất phát, nhận $200.', act: async p => { await moveTo(p, 14); await land(p); } },
   { text:'Ra Sân bay Nội Bài. Nếu đi qua Xuất phát, nhận $200.', act: async p => { await moveTo(p, 5); await land(p); } },
   { text:'Nghỉ dưỡng ở Phú Quốc. Nếu đi qua Xuất phát, nhận $200.', act: async p => { await moveTo(p, 24); await land(p); } },
@@ -2386,10 +2547,10 @@ async function land(p) {
   refreshUI();
 }
 
-async function rollAction() {
+async function rollAction(power) {
   const p = cur();
   state.busy = true; state.buildTile = null; refreshUI();
-  const [a, b] = await rollDice(); const sum = a + b, dbl = a === b;
+  const [a, b] = await rollDice(power === undefined ? 0.3 + Math.random() * 0.5 : power); const sum = a + b, dbl = a === b;
   state.lastDice = sum;
   log(`${pn(p)} tung được ${a} + ${b} = <b>${sum}</b>${dbl ? ' (đôi!)' : ''}`);
   let again = false;
@@ -3084,10 +3245,11 @@ async function rollForOrder() {
   while (todo.length) {
     for (const p of todo) {
       state.cur = state.players.indexOf(p); state.busy = false; refreshUI();
+      let power = 0.3 + Math.random() * 0.5;
       if (p.isBot) await sleep(500);
-      else await getInput(p, ['orderroll']);
+      else { const m = await getInput(p, ['orderroll']); if (typeof m.v === 'number') power = m.v; }
       state.busy = true; refreshUI();
-      const v = await rollDice(), s = v[0] + v[1];
+      const v = await rollDice(power), s = v[0] + v[1];
       p.orderRoll.push(s);
       log(`${pn(p)} tung được ${v[0]} + ${v[1]} = <b>${s}</b>`);
       toast(`${pn(p)} tung được <b>${s}</b>`, 1100);
