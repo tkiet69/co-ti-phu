@@ -819,7 +819,7 @@ const staticAdd = (...o) => staticRoot.add(...o);
   // ---------- CẦU RỒNG (bắc qua sông, ngay trước bàn cờ) ----------
   {
     const u = 0.465625, p = riverCurve.getPointAt(u), tn = riverCurve.getTangentAt(u);
-    const ry = Math.atan2(-tn.z, tn.x);                 // trục dọc cầu (z cục bộ) vuông góc dòng sông
+    const ry = Math.atan2(-tn.z, tn.x) + Math.PI;       // trục dọc cầu vuông góc dòng sông; đầu rồng quay RA XA bàn cờ (lửa không che tầm nhìn)
     const s = 0.45, [g, d] = place(p.x, -0.4, p.z, s, ry);
     const yellow = M(0xffc107, { metalness: .4, roughness: .35 }), grey = M(0x9e9e9e), rail = M(0xeceff1);
     add(g, new THREE.BoxGeometry(3.4, 0.4, 32), grey, 0, 1.6, 0);
