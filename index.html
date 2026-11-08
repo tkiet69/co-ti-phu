@@ -698,10 +698,19 @@ const obstacles = []; // {x,z,r} để cây không mọc đè lên công trình
 function riverDist(x, z) { let m = 1e9; for (const p of riverPts) { const d = (p.x-x)**2 + (p.z-z)**2; if (d < m) m = d; } return Math.sqrt(m); }
 const lakeDist = (x, z) => Math.hypot(x - LAKE.x, z - LAKE.z);
 function noise(x, z) { return Math.sin(x*0.15)*Math.cos(z*0.13)*1.2 + Math.sin(x*0.37 + z*0.21)*0.6 + Math.cos(z*0.45 - x*0.12)*0.4; }
+// Nền phẳng dưới các địa danh (Hồ Gươm, Landmark 81): elip rx × rz, cao độ h
+const PADS = [
+  { x: -17, z: 2, rx: 6.2, rz: 9.6, h: -0.3 },    // Hồ Gươm
+  { x: 0, z: -16, rx: 4.6, rz: 4.6, h: -0.25 },   // Landmark 81
+];
 function groundH(x, z) {
   const sq = Math.max(Math.abs(x), Math.abs(z));
   let h = -0.32;
   if (sq > 9) { const k = Math.min(1, (sq - 9) / 7); h = -0.32 + k * Math.max(0.05, 0.9 + noise(x, z) * 0.8); }
+  for (const p of PADS) {
+    const d = Math.hypot((x - p.x) / p.rx, (z - p.z) / p.rz);
+    if (d < 1) h = p.h; else if (d < 1.5) h = THREE.MathUtils.lerp(p.h, h, (d - 1) / 0.5);
+  }
   const R = Math.hypot(x, z); if (R > 32) h += (R - 32) * 0.22;
   const bed = (d, w) => d < w ? -1.6 : d < w + 2.5 ? THREE.MathUtils.lerp(-1.6, h, (d - w) / 2.5) : h;
   h = Math.min(h, bed(riverDist(x, z), 2.2));
@@ -712,6 +721,142 @@ const freeSpot = (x, z, r) => obstacles.every(o => Math.hypot(o.x - x, o.z - z) 
 // Cảnh tĩnh được gom vào đây rồi gộp theo vật liệu để giảm số lần vẽ
 const staticRoot = new THREE.Group();
 const staticAdd = (...o) => staticRoot.add(...o);
+
+// ================== ĐỊA DANH: HỒ GƯƠM · LANDMARK 81 · CẦU RỒNG ==================
+// Phần đứng yên gộp vào cảnh tĩnh (staticRoot), phần cử động (rùa, đèn, lửa, xe) đặt riêng.
+(function landmarks() {
+  const L = (c, o = {}) => new THREE.MeshStandardMaterial({ color: c, flatShading: true, roughness: .8, ...o });
+  const mats = {}; const M = (c, o) => { const k = c + JSON.stringify(o || {}); return mats[k] || (mats[k] = L(c, o)); }; // dùng chung vật liệu để gộp được
+  const add = (parent, geo, mat, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.set(rx, ry, rz); m.castShadow = m.receiveShadow = true; parent.add(m); return m; };
+  const place = (x, y, z, s, ry = 0) => {          // tạo cặp nhóm tĩnh/động cùng vị trí
+    const st = new THREE.Group(), dy = new THREE.Group();
+    [st, dy].forEach(g => { g.position.set(x, y, z); g.scale.setScalar(s); g.rotation.y = ry; });
+    staticAdd(st); scene.add(dy); return [st, dy];
+  };
+
+  // ---------- HỒ GƯƠM ----------
+  {
+    const [g, d] = place(-17, -0.3, 2, 0.55);
+    const water = add(g, new THREE.CylinderGeometry(10, 10, 0.2, 40), M(0x4db6ac, { roughness: .2, metalness: .1 }), 0, 0.12, 0); water.scale.set(0.75, 1, 1.35);
+    const bank = add(g, new THREE.CylinderGeometry(10.5, 10.7, 0.4, 40, 1, true), M(0xd7ccc8), 0, 0.12, 0); bank.scale.set(0.75, 1, 1.35);
+    add(g, new THREE.CylinderGeometry(1.5, 1.8, 0.4, 12), M(0x7cb342), 0.5, 0.3, 2);
+    [[0.2, 1.7], [0.9, 2.5], [1.2, 1.5]].forEach(([x, z]) => add(g, new THREE.IcosahedronGeometry(0.35, 0), M(0x558b2f), x, 0.7, z));
+    const tr = new THREE.Group(); tr.position.set(0.5, 0.5, 2); g.add(tr);
+    const wall = M(0xe8dcc0), roof = M(0x8d6e63), arch = M(0x5d4037);
+    [[1.1, 0.75, 0], [0.85, 0.6, 0.75], [0.6, 0.5, 1.35]].forEach(([w, h, y]) => {
+      add(tr, new THREE.BoxGeometry(w, h, w * 0.75), wall, 0, y + h / 2, 0);
+      for (let k = -1; k <= 1; k++) [-1, 1].forEach(s => add(tr, new THREE.BoxGeometry(w * 0.16, h * 0.55, 0.02), arch, k * w * 0.3, y + h * 0.45, s * w * 0.375 + s * 0.005));
+      add(tr, new THREE.BoxGeometry(w + 0.14, 0.06, w * 0.75 + 0.14), roof, 0, y + h + 0.03, 0);
+    });
+    add(tr, new THREE.ConeGeometry(0.32, 0.35, 4), roof, 0, 2.03, 0, 0, Math.PI / 4);
+    // đền Ngọc Sơn
+    add(g, new THREE.CylinderGeometry(2.1, 2.3, 0.45, 14), M(0x689f38), -1.4, 0.3, -8);
+    const tp = new THREE.Group(); tp.position.set(-1.4, 0.55, -8); g.add(tp);
+    const red = M(0xb71c1c), tile = M(0x8d2a1b), yel = M(0xfff3c4);
+    [[0, -0.4, 1.8, 1.0], [0, 0.6, 1.4, 0.8]].forEach(([x, z, w, h]) => {
+      add(tp, new THREE.BoxGeometry(w, h, 0.9), yel, x, h / 2, z);
+      [-w / 2 + 0.1, w / 2 - 0.1].forEach(cx => add(tp, new THREE.CylinderGeometry(0.06, 0.06, h, 6), red, cx, h / 2, z + 0.46));
+      const r = add(tp, new THREE.ConeGeometry(1, 0.55, 4), tile, x, h + 0.25, z, 0, Math.PI / 4); r.scale.set(w * 0.8, 1, 0.75);
+      [-1, 1].forEach(s => add(tp, new THREE.ConeGeometry(0.06, 0.25, 4), tile, x + s * w * 0.55, h + 0.12, z, 0, 0, s * 0.9));
+    });
+    [[-1.0, -1.4], [0.9, -1.2], [-0.8, 1.3], [1.1, 1.2]].forEach(([x, z]) => add(tp, new THREE.IcosahedronGeometry(0.45, 0), M(0x558b2f), x, 0.6, z));
+    // cầu Thê Húc
+    const bp = []; for (let k = 0; k <= 24; k++) { const u = k / 24; bp.push(new THREE.Vector3(THREE.MathUtils.lerp(0.6, 7.2, u), 0.45 + Math.sin(u * Math.PI) * 0.9, THREE.MathUtils.lerp(-8, -9.5, u))); }
+    const bc = new THREE.CatmullRomCurve3(bp), bred = M(0xd32f2f);
+    for (let k = 0; k < 24; k++) {
+      const a = bc.getPoint(k / 24), b = bc.getPoint((k + 1) / 24), mid = a.clone().lerp(b, .5), dv = b.clone().sub(a);
+      const seg = add(g, new THREE.BoxGeometry(dv.length() + 0.02, 0.1, 0.7), bred, mid.x, mid.y, mid.z);
+      seg.rotation.y = -Math.atan2(dv.z, dv.x); seg.rotation.z = Math.atan2(dv.y, Math.hypot(dv.x, dv.z));
+    }
+    [-0.33, 0.33].forEach(o => add(g, new THREE.TubeGeometry(new THREE.CatmullRomCurve3(bp.map(p => p.clone().add(new THREE.Vector3(0, 0.33, o)))), 30, 0.03, 4), red));
+    [-0.4, 0.4].forEach(o => add(g, new THREE.BoxGeometry(0.12, 1.1, 0.12), red, 7.5, 0.85, -9.5 + o));
+    add(g, new THREE.BoxGeometry(0.4, 0.12, 1.2), tile, 7.5, 1.45, -9.5);
+    // Tháp Bút
+    add(g, new THREE.CylinderGeometry(0.9, 1.3, 0.8, 8), M(0x8d8d7a), 9.2, 0.5, -10.5);
+    add(g, new THREE.CylinderGeometry(0.2, 0.35, 3.2, 6), M(0xd7ccc8), 9.2, 2.5, -10.5);
+    add(g, new THREE.ConeGeometry(0.22, 0.6, 6), M(0x9e9e9e), 9.2, 4.4, -10.5);
+    // liễu rủ quanh hồ
+    for (let k = 0; k < 22; k++) {
+      const a = k / 22 * Math.PI * 2, x = Math.cos(a) * 8.6, z = Math.sin(a) * 14.4;
+      if (Math.hypot(x - 7.5, z + 9.5) < 2.5 || Math.hypot(x - 9.2, z + 10.5) < 2) continue;
+      add(g, new THREE.CylinderGeometry(0.1, 0.15, 1, 5), M(0x6d4c41), x, 0.5, z);
+      if (k % 2) { for (let j = 0; j < 5; j++) { const b = j / 5 * Math.PI * 2; add(g, new THREE.ConeGeometry(0.25, 1.2, 5), M(0x9ccc65), x + Math.cos(b) * 0.35, 0.9, z + Math.sin(b) * 0.35, Math.PI); } add(g, new THREE.IcosahedronGeometry(0.45, 0), M(0x8bc34a), x, 1.45, z); }
+      else add(g, new THREE.IcosahedronGeometry(0.8, 0), M(k % 6 === 0 ? 0xf48fb1 : 0x689f38), x, 1.4, z);
+    }
+    // rùa bơi
+    const turtle = new THREE.Group(); d.add(turtle);
+    add(turtle, new THREE.SphereGeometry(0.35, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), L(0x6d8b4a), 0, 0, 0);
+    add(turtle, new THREE.SphereGeometry(0.13, 8, 6), L(0x8bc34a), 0, 0.05, 0.4);
+    updaters.push(t => { const a = t * 0.15; turtle.position.set(Math.cos(a) * 4.5, 0.24 + Math.sin(t * 2) * 0.03, Math.sin(a) * 7 + 1); turtle.rotation.y = -a; });
+    for (let k = -3; k <= 3; k++) obstacles.push({ x: -17, z: 2 + k * 2.6, r: 5.2 });
+  }
+
+  // ---------- LANDMARK 81 ----------
+  {
+    const [g, d] = place(0, -0.25, -16, 0.55);
+    const glass = M(0x8ec9f0, { metalness: .15, roughness: .25, emissive: 0x1a4a70, emissiveIntensity: .25 });
+    const glassDark = M(0x6aaedc, { metalness: .15, roughness: .3, emissive: 0x14385a, emissiveIntensity: .25 });
+    const frame = M(0xeceff1);
+    add(g, new THREE.BoxGeometry(9, 0.4, 9), M(0xcfd8dc), 0, 0.2, 0);
+    add(g, new THREE.BoxGeometry(7, 2.2, 7), M(0xf5f5f5), 0, 1.5, 0);
+    add(g, new THREE.BoxGeometry(7.05, 0.5, 7.05), glassDark, 0, 1.2, 0);
+    const H = [[14, 18, 15], [19, 24, 20], [15, 21, 16]], S = 1.25;
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
+      const h = H[i][j], x = (i - 1) * S, z = (j - 1) * S;
+      add(g, new THREE.BoxGeometry(S * 0.96, h, S * 0.96), (i + j) % 2 ? glass : glassDark, x, 2.6 + h / 2, z);
+      for (let y = 3.6; y < 2.6 + h; y += 1.6) add(g, new THREE.BoxGeometry(S, 0.08, S), frame, x, y, z);
+      add(g, new THREE.BoxGeometry(S * 0.7, 0.4, S * 0.7), frame, x, 2.6 + h + 0.2, z);
+    }
+    add(g, new THREE.CylinderGeometry(0.05, 0.2, 4, 6), frame, 0, 28.6, 0);
+    const tipM = new THREE.MeshBasicMaterial({ color: 0xff1744 });
+    add(d, new THREE.SphereGeometry(0.18, 8, 6), tipM, 0, 30.8, 0);
+    updaters.push(t => { tipM.color.setHex(Math.floor(t * 1.5) % 2 ? 0xff1744 : 0x550000); });   // đèn báo hiệu trên đỉnh
+    for (let k = 0; k < 10; k++) { const a = k / 10 * Math.PI * 2, x = Math.cos(a) * 5.4, z = Math.sin(a) * 5.4;
+      add(g, new THREE.CylinderGeometry(0.08, 0.12, 0.7, 5), M(0x6d4c41), x, 0.75, z); add(g, new THREE.IcosahedronGeometry(0.5, 0), M(0x7cb342), x, 1.3, z); }
+    obstacles.push({ x: 0, z: -16, r: 4.4 });
+  }
+
+  // ---------- CẦU RỒNG (bắc qua sông, ngay trước bàn cờ) ----------
+  {
+    const u = 0.465625, p = riverCurve.getPointAt(u), tn = riverCurve.getTangentAt(u);
+    const ry = Math.atan2(-tn.z, tn.x);                 // trục dọc cầu (z cục bộ) vuông góc dòng sông
+    const s = 0.45, [g, d] = place(p.x, -0.4, p.z, s, ry);
+    const yellow = M(0xffc107, { metalness: .4, roughness: .35 }), grey = M(0x9e9e9e), rail = M(0xeceff1);
+    add(g, new THREE.BoxGeometry(3.4, 0.4, 32), grey, 0, 1.6, 0);
+    add(g, new THREE.BoxGeometry(3.4, 0.05, 32), M(0x424242), 0, 1.82, 0);
+    [-1.65, 1.65].forEach(x => add(g, new THREE.BoxGeometry(0.1, 0.35, 32), rail, x, 2, 0));
+    [-12, -4, 4, 12].forEach(z => add(g, new THREE.CylinderGeometry(0.5, 0.6, 3.6, 8), M(0xbdbdbd), 0, -0.2, z));   // trụ cầu cắm xuống lòng sông
+    [-16.5, 16.5].forEach(z => add(g, new THREE.BoxGeometry(3.6, 3, 1.5), M(0xbdbdbd), 0, 0.1, z));                 // mố cầu hai đầu
+    const pts = [];
+    for (let k = 0; k <= 60; k++) { const z = -14 + k * (28 / 60), y = 1.9 + Math.max(0, Math.sin((z + 14) / 28 * Math.PI * 3)) * 3.2 + 0.15; pts.push(new THREE.Vector3(0, y, z)); }
+    const curve = new THREE.CatmullRomCurve3(pts);
+    add(g, new THREE.TubeGeometry(curve, 120, 0.32, 8, false), yellow);
+    for (let k = 2; k < 58; k += 2) { const q = curve.getPoint(k / 60); add(g, new THREE.ConeGeometry(0.14, 0.4, 4), M(0xffa000), q.x, q.y + 0.38, q.z); }
+    for (let k = 3; k < 58; k += 3) { const q = curve.getPoint(k / 60); if (q.y < 2.6) continue; const h = q.y - 1.9; add(g, new THREE.CylinderGeometry(0.03, 0.03, h, 4), rail, 0, 1.9 + h / 2, q.z); }
+    const head = new THREE.Group(); head.position.set(0, 3.1, -15.2); g.add(head);
+    add(head, new THREE.BoxGeometry(0.9, 0.8, 1.4), yellow, 0, 0, 0);
+    add(head, new THREE.BoxGeometry(0.75, 0.35, 0.9), yellow, 0, -0.15, -0.95);
+    add(head, new THREE.BoxGeometry(0.7, 0.12, 0.8), M(0xffa000), 0, -0.45, -0.75);
+    [-0.3, 0.3].forEach(x => { add(head, new THREE.ConeGeometry(0.12, 0.9, 5), M(0xffa000), x, 0.7, 0.4, -0.6); add(head, new THREE.SphereGeometry(0.09, 6, 5), M(0xd50000), x, 0.2, -0.55); });
+    add(g, new THREE.TubeGeometry(new THREE.CatmullRomCurve3([new THREE.Vector3(0, 3.0, -14.6), new THREE.Vector3(0, 2.4, -14.1), new THREE.Vector3(0, 2.05, -13.6)]), 10, 0.3, 8), yellow);
+    add(g, new THREE.TorusGeometry(0.6, 0.18, 6, 14, Math.PI * 1.4), yellow, 0, 2.6, 14.6, 0, Math.PI / 2, 0);
+    // lửa phun từ miệng rồng
+    const fire = [];
+    for (let k = 0; k < 18; k++) { const m = add(d, new THREE.IcosahedronGeometry(0.22, 0), new THREE.MeshBasicMaterial({ color: k % 3 ? 0xff6d00 : 0xffeb3b, transparent: true })); m.castShadow = false; fire.push({ m, ph: k / 18 }); }
+    updaters.push(t => fire.forEach(f => {
+      const v = (t * 0.9 + f.ph) % 1;
+      f.m.position.set(Math.sin(f.ph * 40) * v * 0.6, 2.95 + v * 0.6 + Math.sin(f.ph * 25) * v * 0.4, -16.4 - v * 4);
+      f.m.scale.setScalar(0.6 + v * 1.6); f.m.material.opacity = 1 - v;
+    }));
+    // xe chạy trên cầu
+    for (let k = 0; k < 4; k++) { const c = new THREE.Group(); d.add(c);
+      add(c, new THREE.BoxGeometry(0.6, 0.35, 1.1), L([0xe53935, 0x1e88e5, 0xfafafa, 0x43a047][k]), 0, 0.2, 0); add(c, new THREE.BoxGeometry(0.55, 0.25, 0.6), L(0x263238), 0, 0.45, -0.05);
+      const lane = k % 2 ? 0.8 : -0.8, dir = k % 2 ? 1 : -1, ph = k * 7;
+      updaters.push(t => { c.position.set(lane, 1.82, ((ph + t * 3.2 * dir) % 30 + 30) % 30 - 15); c.rotation.y = dir > 0 ? 0 : Math.PI; }); }
+    // giữ chỗ để nhà/cây không mọc đè lên cầu
+    for (let k = -8; k <= 8; k++) { const zz = k * 1; const wx = p.x + Math.sin(ry) * zz, wz = p.z + Math.cos(ry) * zz; obstacles.push({ x: wx, z: wz, r: 1.3 }); }
+  }
+})();
 
 // Bầu trời
 (function sky() {
