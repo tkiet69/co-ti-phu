@@ -1154,7 +1154,7 @@ function sfxHammer(n = 3) {
   const ctx = SND.ctx; if (!ctx || !SND.sfx) return;
   const t = ctx.currentTime + 0.02;
   for (let k = 0; k < n; k++) {
-    const tt = t + k * 0.13 + Math.random() * 0.02, o = ctx.createOscillator(), g = ctx.createGain(); o.type = 'triangle';
+    const tt = t + k * 0.15 + Math.random() * 0.02, o = ctx.createOscillator(), g = ctx.createGain(); o.type = 'triangle';
     o.frequency.setValueAtTime(1100 + Math.random() * 200, tt); o.frequency.exponentialRampToValueAtTime(420, tt + 0.05);
     o.connect(g); env(g, tt, 0.2, 0.002, 0.07); g.connect(SND.sfxGain); o.start(tt); o.stop(tt + 0.12);
     noiseHit(tt, 'bandpass', 2400, 3, 0.12, 0.03, SND.sfxGain);
@@ -1430,18 +1430,18 @@ function buildFx(body, roof, hotel) {
   if (roof) { roof.visible = false; }
   const wp = new THREE.Vector3(); body.getWorldPosition(wp);
   floatText(wp.clone().setY(wp.y + 0.8), '🔨', '#fff');
-  sfxHammer(hotel ? 5 : 3);
-  // thân nhà mọc lên
-  tween(hotel ? 700 : 480, t => {
+  // giàn giáo đứng một lúc, rồi thân nhà mọc lên chậm rãi, búa gõ suốt lúc xây
+  const RISE = hotel ? 1800 : 1300;
+  tween(400, () => {}).then(() => { sfxHammer(hotel ? 12 : 9); return tween(RISE, t => {
     const e = 1 - Math.pow(1 - t, 3);
     body.scale.set(sc.x, Math.max(0.001, sc.y * e), sc.z);
     body.position.y = hotel ? 0.2 : bodyY - 0.07 * (1 - e);
-  }).then(() => {
+  }); }).then(() => {
     body.scale.copy(sc); body.position.y = bodyY;
     if (roof) {
       // mái rơi xuống, nảy nhẹ
       roof.visible = true; const r0 = roofY + 0.6;
-      return tween(320, t => { const k = t < .75 ? (t / .75) ** 2 : 1 - Math.sin((t - .75) / .25 * Math.PI) * 0.06; roof.position.y = r0 + (roofY - r0) * k; });
+      return tween(600, t => { const k = t < .75 ? (t / .75) ** 2 : 1 - Math.sin((t - .75) / .25 * Math.PI) * 0.06; roof.position.y = r0 + (roofY - r0) * k; });
     }
   }).then(() => {
     if (roof) roof.position.y = roofY;
