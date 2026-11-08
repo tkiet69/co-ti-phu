@@ -2081,7 +2081,7 @@ async function humanTurn(p) {
 
 // ---------- Giữ để lấy lực tung xúc xắc (0 → tối đa sau 1,5 giây, thanh xanh → đỏ) ----------
 const CHARGE = { on: false, start: 0, power: 0, act: null, released: 0 };
-const POWER_MS = 1500;
+const POWER_MS = 1000; // thời gian giữ để đầy lực (nhanh hơn 50% so với 1,5 giây ban đầu)
 function chargeStart(act) {
   if (CHARGE.on) return;
   const w = state.waiting; if (!w || !w.kinds.includes(act)) return;
