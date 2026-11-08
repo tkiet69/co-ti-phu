@@ -74,6 +74,20 @@
   .sw:disabled { cursor:not-allowed; opacity:.35; }
   .sw:disabled::after { content:'✕'; position:absolute; inset:0; color:#fff; font-size:12px; line-height:16px; font-weight:900; }
 
+  /* Mua đất: giấy chứng nhận + con dấu */
+  #deedPop { position:fixed; inset:0; z-index:17; display:flex; align-items:center; justify-content:center; pointer-events:none; }
+  #deedPop .dpCard { position:relative; width:250px; transform:translateY(60px) scale(.5) rotate(-6deg); opacity:0;
+    transition:transform .38s cubic-bezier(.2,1.5,.4,1), opacity .25s; box-shadow:0 18px 50px rgba(0,0,0,.45); border-radius:8px; }
+  #deedPop.in .dpCard { transform:none; opacity:1; }
+  #deedPop.stamped .dpCard { animation:dpShake .25s; }
+  #deedPop.out .dpCard { transition:transform .35s ease-in, opacity .35s; transform:translate(-38vw, -38vh) scale(.15) rotate(-20deg); opacity:0; }
+  @keyframes dpShake { 0%,100% { transform:none; } 30% { transform:translate(3px, 4px) rotate(.6deg); } 60% { transform:translate(-2px, -2px); } }
+  .dpStamp { position:absolute; right:12px; top:44%; transform:rotate(-16deg) scale(3); opacity:0; color:#c62828;
+    border:4px double #c62828; border-radius:10px; padding:4px 12px 2px; text-align:center; background:rgba(255,255,255,.35); line-height:1.05; }
+  .dpStamp b { display:block; font-size:30px; font-weight:900; letter-spacing:2px; }
+  .dpStamp span { display:block; font-size:12px; font-weight:800; max-width:130px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--sc); }
+  #deedPop.stamped .dpStamp { animation:stampIn .28s cubic-bezier(.3,1.6,.5,1) forwards; }
+  @keyframes stampIn { 0% { transform:rotate(-16deg) scale(3); opacity:0; } 70% { transform:rotate(-16deg) scale(.92); opacity:1; } 100% { transform:rotate(-16deg) scale(1); opacity:.92; } }
   .deed { border:2px solid #222; border-radius:6px; overflow:hidden; font-size:14px; background:#fffdf5; }
   .deedHead { text-align:center; padding:8px; font-weight:800; font-size:18px; }
   .deedHead small { display:block; font-size:10px; font-weight:600; letter-spacing:1px; opacity:.85; }
@@ -1135,6 +1149,25 @@ function sfxSiren(dur = 2.6) {
   g.gain.setValueAtTime(0.07, t + dur * 0.6); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
   lp.connect(g); g.connect(SND.sfxGain);
 }
+// --- Búa xây nhà "cốc cốc cốc" ---
+function sfxHammer(n = 3) {
+  const ctx = SND.ctx; if (!ctx || !SND.sfx) return;
+  const t = ctx.currentTime + 0.02;
+  for (let k = 0; k < n; k++) {
+    const tt = t + k * 0.13 + Math.random() * 0.02, o = ctx.createOscillator(), g = ctx.createGain(); o.type = 'triangle';
+    o.frequency.setValueAtTime(1100 + Math.random() * 200, tt); o.frequency.exponentialRampToValueAtTime(420, tt + 0.05);
+    o.connect(g); env(g, tt, 0.2, 0.002, 0.07); g.connect(SND.sfxGain); o.start(tt); o.stop(tt + 0.12);
+    noiseHit(tt, 'bandpass', 2400, 3, 0.12, 0.03, SND.sfxGain);
+  }
+}
+// --- Con dấu đóng "cộp" ---
+function sfxStamp() {
+  const ctx = SND.ctx; if (!ctx || !SND.sfx) return;
+  const t = ctx.currentTime + 0.01, o = ctx.createOscillator(), g = ctx.createGain(); o.type = 'sine';
+  o.frequency.setValueAtTime(180, t); o.frequency.exponentialRampToValueAtTime(60, t + 0.12);
+  o.connect(g); env(g, t, 0.45, 0.003, 0.16); g.connect(SND.sfxGain); o.start(t); o.stop(t + 0.2);
+  noiseHit(t, 'lowpass', 1200, 0.8, 0.3, 0.06, SND.sfxGain);
+}
 // --- Bước đi: tiếng "lộc cộc" quân gỗ chạm bàn (cao độ đổi nhẹ mỗi bước) ---
 let stepN = 0;
 function sfxStep(big) {
@@ -1378,8 +1411,59 @@ function refreshTile(i, animateNew) {
   }
   if (animateNew) {
     const ch = obj.buildings.children;
-    (o.houses === 5 ? ch.slice(-1) : ch.slice(-2)).forEach(m => popIn(m, 550));
+    if (o.houses === 5) buildFx(ch[ch.length - 1], null, true);
+    else buildFx(ch[ch.length - 2], ch[ch.length - 1], false);
   }
+}
+// Hiệu ứng xây: giàn giáo hiện ra → thân nhà mọc lên kèm tiếng búa → mái rơi xuống khớp → bụi tung
+const scaffoldMat = new THREE.LineBasicMaterial({ color: 0xffc107 });
+function buildFx(body, roof, hotel) {
+  const parent = body.parent; if (!parent) return;
+  const bodyY = body.position.y, sc = body.scale.clone();
+  const roofY = roof ? roof.position.y : 0;
+  // giàn giáo vàng (khung dây) bao quanh chỗ sắp xây
+  const box = new THREE.Box3().setFromObject(body); const size = box.getSize(new THREE.Vector3());
+  const sg = new THREE.EdgesGeometry(new THREE.BoxGeometry(hotel ? 0.62 : 0.22, hotel ? 0.42 : 0.3, hotel ? 0.36 : 0.22));
+  const scaf = new THREE.LineSegments(sg, scaffoldMat);
+  scaf.position.set(body.position.x, hotel ? 0.2 + 0.21 : 0.35, body.position.z); parent.add(scaf);
+  body.scale.set(sc.x, 0.001, sc.z); body.position.y = hotel ? 0.2 : bodyY - 0.07;
+  if (roof) { roof.visible = false; }
+  const wp = new THREE.Vector3(); body.getWorldPosition(wp);
+  floatText(wp.clone().setY(wp.y + 0.8), '🔨', '#fff');
+  sfxHammer(hotel ? 5 : 3);
+  // thân nhà mọc lên
+  tween(hotel ? 700 : 480, t => {
+    const e = 1 - Math.pow(1 - t, 3);
+    body.scale.set(sc.x, Math.max(0.001, sc.y * e), sc.z);
+    body.position.y = hotel ? 0.2 : bodyY - 0.07 * (1 - e);
+  }).then(() => {
+    body.scale.copy(sc); body.position.y = bodyY;
+    if (roof) {
+      // mái rơi xuống, nảy nhẹ
+      roof.visible = true; const r0 = roofY + 0.6;
+      return tween(320, t => { const k = t < .75 ? (t / .75) ** 2 : 1 - Math.sin((t - .75) / .25 * Math.PI) * 0.06; roof.position.y = r0 + (roofY - r0) * k; });
+    }
+  }).then(() => {
+    if (roof) roof.position.y = roofY;
+    parent.remove(scaf); sg.dispose();
+    body.getWorldPosition(wp); wp.y = 0.25;
+    burst(wp, 0xd7ccc8, hotel ? 16 : 10, 0.8, 1.6);           // bụi
+    if (hotel) { burst(wp.clone().setY(0.6), 0xffc107, 14, 0.7, 3.5); floatText(wp.clone().setY(1.2), '🏨', '#fff'); }
+    else floatText(wp.clone().setY(1.0), '🏠', '#fff');
+    sfxStep(true);
+  });
+}
+// Mua đất: giấy chứng nhận bay lên, đóng dấu "ĐÃ MUA", rồi bay đi (mọi người đều thấy)
+function deedStamp(p, i) {
+  return new Promise(res => {
+    const el = document.createElement('div'); el.id = 'deedPop';
+    el.innerHTML = `<div class="dpCard">${deedHTML(i)}<div class="dpStamp" style="--sc:${p.color}"><b>ĐÃ MUA</b><span>${esc(p.name)}</span></div></div>`;
+    document.body.appendChild(el);
+    requestAnimationFrame(() => el.classList.add('in'));
+    setTimeout(() => { el.classList.add('stamped'); sfxStamp(); }, 520);
+    setTimeout(() => el.classList.add('out'), 1450);
+    setTimeout(() => { el.remove(); res(); }, 1800);
+  });
 }
 
 // --- Render loop ---
@@ -2263,7 +2347,7 @@ async function land(p) {
   if (o) {
     if (!o.owner) {
       if (p.money >= t.price) {
-        if (await askBuy(p, i)) { p.money -= t.price; o.owner = p; refreshTile(i); moneyFx(p, -t.price); coinBurst(i); popIn(tileObjs[i].marker); log(`${pn(p)} mua <b>${esc(t.name)}</b> giá ${fmt(t.price)}`); }
+        if (await askBuy(p, i)) { p.money -= t.price; o.owner = p; refreshTile(i); moneyFx(p, -t.price); coinBurst(i); popIn(tileObjs[i].marker); log(`${pn(p)} mua <b>${esc(t.name)}</b> giá ${fmt(t.price)}`); await deedStamp(p, i); }
         else log(`${pn(p)} không mua ${esc(t.name)}`);
       } else log(`${pn(p)} không đủ tiền mua ${esc(t.name)}`);
     } else if (o.owner === p) {
