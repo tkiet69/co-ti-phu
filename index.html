@@ -213,7 +213,7 @@
   .tChip { border:2px solid #e0e0e0; background:#fff; border-radius:999px; padding:3px 9px 3px 6px; font-size:12.5px; font-weight:700; cursor:pointer;
     display:flex; align-items:center; gap:4px; font-family:inherit; max-width:140px; overflow:hidden; white-space:nowrap; }
   .tChip.sel { border-color:var(--pc); background:color-mix(in srgb, var(--pc) 14%, #fff); }
-  .tItems { display:grid; grid-template-columns:repeat(4, 1fr); gap:6px; }
+  .tItems { display:grid; grid-template-columns:repeat(5, 1fr); gap:5px; max-height:190px; overflow:auto; }
   .tItem { border:none; border-radius:10px; background:#fff3e0; font-size:24px; padding:6px 2px 4px; cursor:pointer; display:flex; flex-direction:column; align-items:center;
     box-shadow:0 2px 0 #ffcc80; font-family:inherit; transition:transform .1s; }
   .tItem small { font-size:11px; font-weight:700; color:#6d4c41; }
@@ -2955,7 +2955,13 @@ async function startTurn() {
 // ================== CHAT & CHỌC GHẸO ==================
 // Không thuộc luật chơi nên đi kênh riêng ('ctp.chat'), không qua hàng đợi lockstep.
 // Người chơi được nhận diện bằng p.idx (thứ tự lúc tạo, giống nhau trên mọi máy).
-const TEASE = { brick: ['🧱', 'Gạch', 'ném gạch vào'], poop: ['💩', 'Phân', 'ném phân vào'], egg: ['🥚', 'Trứng', 'chọi trứng vào'], rose: ['🌹', 'Hoa', 'tặng hoa cho'] };
+const TEASE = {
+  brick: ['🧱', 'Gạch', 'ném gạch vào'], poop: ['💩', 'Phân', 'ném phân vào'], egg: ['🥚', 'Trứng', 'chọi trứng vào'], tomato: ['🍅', 'Cà chua', 'ném cà chua vào'],
+  water: ['🎈', 'Bóng nước', 'ném bóng nước vào'], cake: ['🎂', 'Bánh kem', 'úp bánh kem vào'], slipper: ['🩴', 'Dép', 'chọi dép vào'], banana: ['🍌', 'Vỏ chuối', 'thả vỏ chuối cho'],
+  bomb: ['💣', 'Bom', 'ném bom vào'], thunder: ['⚡', 'Sét', 'gọi sét đánh'], ice: ['🧊', 'Đóng băng', 'đóng băng'],
+  rose: ['🌹', 'Hoa', 'tặng hoa cho'], kiss: ['💋', 'Hôn gió', 'hôn gió'],
+};
+const NICE_TEASE = new Set(['rose', 'kiss']);
 const QUICK_EMO = ['😂', '😎', '😡', '😭', '🥳', '👍', '🤡', '💸', '🙏', '❤️', '🔥', '😱'];
 const CHAT = { open: false, unread: 0, target: null, cool: 0, bubbles: {} };
 const byIdx = i => state.players.find(p => p.idx === i);
@@ -2991,7 +2997,7 @@ function chatRecv(d, peer) {
     // máy bị chọc thì phản ứng lại (chỉ một máy quyết định: chơi trên máy này, hoặc chủ phòng)
     if (!to.human && (!NET.online || NET.role === 'host') && Math.random() < 0.8) setTimeout(() => {
       if (to.bankrupt) return;
-      if (d.item === 'rose') chatSend({ t: 'emo', from: to.idx, e: Math.random() < 0.5 ? '❤️' : '🥳' });
+      if (NICE_TEASE.has(d.item)) chatSend({ t: 'emo', from: to.idx, e: Math.random() < 0.5 ? '❤️' : '🥳' });
       else if (Math.random() < 0.45 && !from.bankrupt) chatSend({ t: 'throw', from: to.idx, to: from.idx, item: d.item });
       else chatSend({ t: 'emo', from: to.idx, e: ['😡', '😭', '😱', '🤡'][Math.floor(Math.random() * 4)] });
     }, 1300 + Math.random() * 900);
@@ -3044,6 +3050,34 @@ function makeProjectile(item) {
     const tip = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.07, 10), m); tip.position.y = 0.22; g.add(tip);
   } else if (item === 'egg') {
     const e = new THREE.Mesh(new THREE.SphereGeometry(0.09, 16, 12), M(0xfff8e1, { roughness: .3 })); e.scale.y = 1.3; g.add(e);
+  } else if (item === 'tomato') {
+    const b = new THREE.Mesh(new THREE.SphereGeometry(0.1, 14, 10), M(0xe53935, { roughness: .3 })); b.scale.y = 0.85; g.add(b);
+    for (let k = 0; k < 5; k++) { const l = new THREE.Mesh(new THREE.ConeGeometry(0.02, 0.07, 4), M(0x2e7d32)); const a = k / 5 * Math.PI * 2; l.position.set(Math.cos(a) * 0.03, 0.09, Math.sin(a) * 0.03); l.rotation.set(Math.sin(a) * 1.3, 0, -Math.cos(a) * 1.3); g.add(l); }
+  } else if (item === 'water') {
+    const b = new THREE.Mesh(new THREE.SphereGeometry(0.11, 14, 10), M(0x29b6f6, { roughness: .1, transparent: true, opacity: .85 })); b.scale.y = 1.15; g.add(b);
+    const k = new THREE.Mesh(new THREE.ConeGeometry(0.025, 0.04, 6), M(0x0288d1)); k.position.y = -0.13; k.rotation.x = Math.PI; g.add(k);
+  } else if (item === 'cake') {
+    const c = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.1, 16), M(0xfff3e0)); g.add(c);
+    const icing = new THREE.Mesh(new THREE.CylinderGeometry(0.135, 0.135, 0.03, 16), M(0xf48fb1)); icing.position.y = 0.05; g.add(icing);
+    const cherry = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 6), M(0xd50000)); cherry.position.y = 0.09; g.add(cherry);
+  } else if (item === 'slipper') {
+    // dép tổ ong xanh trắng
+    const sole = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.03, 0.28), M(0xffffff)); g.add(sole);
+    const strap = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.015, 6, 10, Math.PI), M(0x1e88e5)); strap.position.set(0, 0.015, 0.05); strap.rotation.y = Math.PI / 2; g.add(strap);
+  } else if (item === 'banana') {
+    const peel = new THREE.Mesh(new THREE.TorusGeometry(0.1, 0.03, 6, 12, Math.PI * 1.1), M(0xffeb3b)); g.add(peel);
+    [-0.6, 0.6].forEach(r => { const f = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.12, 4), M(0xfdd835)); f.position.set(0.1, -0.03, 0); f.rotation.z = r + Math.PI; g.add(f); });
+  } else if (item === 'bomb') {
+    const b = new THREE.Mesh(new THREE.SphereGeometry(0.11, 14, 10), M(0x263238, { roughness: .3, metalness: .3 })); g.add(b);
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.04, 8), M(0x78909c)); cap.position.y = 0.11; g.add(cap);
+    const fuse = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.08, 4), M(0x8d6e63)); fuse.position.y = 0.16; g.add(fuse);
+    const spark = new THREE.Mesh(new THREE.SphereGeometry(0.03, 6, 5), new THREE.MeshBasicMaterial({ color: 0xffeb3b })); spark.position.y = 0.21; g.add(spark);
+  } else if (item === 'ice') {
+    const c = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.15, 0.15), M(0xb3e5fc, { roughness: .05, transparent: true, opacity: .8 })); g.add(c);
+  } else if (item === 'kiss') {
+    const lip = M(0xff4081, { roughness: .3 });
+    const top = new THREE.Mesh(new THREE.SphereGeometry(0.08, 12, 8), lip); top.scale.set(1.5, 0.45, 0.6); top.position.y = 0.03; g.add(top);
+    const bot = new THREE.Mesh(new THREE.SphereGeometry(0.08, 12, 8), lip); bot.scale.set(1.3, 0.5, 0.6); bot.position.y = -0.03; g.add(bot);
   } else {
     const head = new THREE.Mesh(new THREE.SphereGeometry(0.07, 12, 10), M(0xe53935)); head.position.y = 0.16; g.add(head);
     const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.26, 6), M(0x2e7d32)); stem.position.y = 0.03; g.add(stem);
@@ -3078,24 +3112,104 @@ function wobble(p) {
   const r0 = p.mesh.rotation.z;
   tween(600, t => { p.mesh.rotation.z = r0 + Math.sin(t * Math.PI * 6) * 0.35 * (1 - t); }).then(() => { p.mesh.rotation.z = r0; });
 }
+// quân cờ bị bẹp rồi nảy lại (trúng dép)
+function squash(p) {
+  const s0 = p.mesh.scale.clone();
+  tween(650, t => { const k = t < .2 ? 1 - t / .2 * 0.45 : 0.55 + (1 - Math.exp(-(t - .2) * 8) * Math.cos((t - .2) * 18)) * 0.45; p.mesh.scale.set(s0.x * (2 - k), s0.y * k, s0.z * (2 - k)); })
+    .then(() => p.mesh.scale.copy(s0));
+}
+// trượt vỏ chuối: quay vòng + nghiêng
+function slip(p) {
+  const r0 = p.mesh.rotation.clone();
+  tween(1100, t => { p.mesh.rotation.y = r0.y + t * Math.PI * 4; p.mesh.rotation.z = r0.z + Math.sin(t * Math.PI) * 0.9; p.mesh.position.y = 0.2 + Math.sin(t * Math.PI) * 0.25; })
+    .then(() => { p.mesh.rotation.copy(r0); p.mesh.position.y = 0.2; });
+}
+// hất tung lên (nổ bom)
+function blast(p) {
+  const y0 = 0.2, r0 = p.mesh.rotation.clone();
+  tween(900, t => { p.mesh.position.y = y0 + Math.sin(t * Math.PI) * 1.4; p.mesh.rotation.x = r0.x + t * Math.PI * 2; })
+    .then(() => { p.mesh.position.y = y0; p.mesh.rotation.copy(r0); });
+}
+// đổi màu quân cờ tạm thời (cháy đen vì sét)
+function tint(p, hex, ms) {
+  // nhớ màu gốc một lần duy nhất (bị bom rồi bị sét liên tiếp vẫn trả về đúng màu gốc)
+  const mats = [];
+  p.mesh.traverse(o => { if (o.isMesh && o.material && o.material.color) { const m = o.material; if (m.userData.c0 === undefined) m.userData.c0 = m.color.getHex(); m.color.setHex(hex); mats.push(m); } });
+  clearTimeout(p._tintT);
+  p._tintT = setTimeout(() => mats.forEach(m => m.color.setHex(m.userData.c0)), ms);
+}
+// khối băng bọc quân cờ rồi vỡ
+function freeze(p) {
+  const mat = new THREE.MeshStandardMaterial({ color: 0xb3e5fc, roughness: .05, metalness: .1, transparent: true, opacity: 0.55 });
+  const ice = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.8, 0.5), mat); ice.position.y = 0.3; p.mesh.add(ice);
+  popIn(ice, 300);
+  setTimeout(() => {
+    p.mesh.remove(ice); ice.geometry.dispose(); mat.dispose();
+    const pos = p.mesh.position.clone(); pos.y += 0.4; burst(pos, 0xb3e5fc, 16, 1.1, 2.6); sfxImpact('iceBreak');
+  }, 3000);
+}
+// tia sét từ trời đánh xuống
+function lightning(to) {
+  const b = to.mesh.position.clone(), pts = [];
+  let x = b.x + rand(-.6, .6), z = b.z + rand(-.6, .6);
+  for (let k = 0; k <= 10; k++) { const y = 9 - k * 0.88; pts.push(new THREE.Vector3(k === 10 ? b.x : x + rand(-.35, .35), k === 10 ? b.y + 0.5 : y, k === 10 ? b.z : z + rand(-.35, .35))); }
+  const mat = new THREE.LineBasicMaterial({ color: 0xfffde7, transparent: true });
+  const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), mat); scene.add(line);
+  const glow = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts, false, 'catmullrom', 0), 40, 0.05, 5, false), new THREE.MeshBasicMaterial({ color: 0xfff176, transparent: true, opacity: .9 }));
+  scene.add(glow);
+  const flash = document.createElement('div'); flash.style.cssText = 'position:fixed;inset:0;background:#fff;opacity:.55;z-index:12;pointer-events:none;transition:opacity .35s';
+  document.body.appendChild(flash); requestAnimationFrame(() => { flash.style.opacity = 0; }); setTimeout(() => flash.remove(), 400);
+  tween(450, t => { mat.opacity = glow.material.opacity = (1 - t) * (Math.random() < .5 ? 1 : .4); })
+    .then(() => { scene.remove(line, glow); line.geometry.dispose(); glow.geometry.dispose(); mat.dispose(); glow.material.dispose(); });
+}
 function throwFx(from, to, item) {
   if (!to.mesh || !to.mesh.visible) return;
+  const top = () => { const v = to.mesh.position.clone(); v.y += 0.5; return v; };
+  const say = (txt, col = '#fff') => floatText(top().setY(to.mesh.position.y + 1.1), txt, col);
+  if (item === 'thunder') {                         // sét: không ném, đánh thẳng từ trời
+    sfxImpact('thunder'); lightning(to); tint(to, 0x212121, 2500); wobble(to);
+    burst(top(), 0xffeb3b, 10, .7, 3); say('⚡'); return;
+  }
   const a = from && from.mesh && from.mesh.visible ? from.mesh.position.clone() : new THREE.Vector3(0, 6, 0); a.y += 0.6;
-  const b = to.mesh.position.clone(); b.y += 0.42;
+  const b = to.mesh.position.clone(); b.y += item === 'banana' ? 0.05 : 0.42;
   const m = makeProjectile(item); m.position.copy(a); scene.add(m);
   const dist = a.distanceTo(b), h = 1.4 + dist * 0.14, spin = rand(8, 14);
   sfxWhoosh();
   tween(550 + dist * 35, t => {
     m.position.lerpVectors(a, b, t); m.position.y += Math.sin(Math.PI * t) * h;
-    if (item !== 'rose') m.rotation.set(t * spin, t * spin * .6, 0); else m.rotation.z = t * 4;
+    if (item === 'rose' || item === 'kiss') { m.rotation.z = t * 4; m.scale.setScalar(1 + Math.sin(t * Math.PI) * 0.4); }
+    else if (item === 'slipper') m.rotation.set(0, t * spin * 2.2, t * 2);
+    else m.rotation.set(t * spin, t * spin * .6, 0);
   }).then(() => {
     scene.remove(m); m.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
     sfxImpact(item);
-    const top = to.mesh.position.clone(); top.y += 0.5;
-    if (item === 'brick') { burst(top, 0xb5523b, 12, 1.1, 3); floatText(top.clone().setY(top.y + .5), '💥', '#fff'); wobble(to); }
-    else if (item === 'poop') { burst(top, 0x6d4c41, 14, 0.9, 2.5); stain(to, 0x5d4037, 6); floatText(top.clone().setY(top.y + .5), '💩', '#fff'); wobble(to); }
-    else if (item === 'egg') { burst(top, 0xfff8e1, 8, .8, 2.2); burst(top, 0xffc107, 6, .9, 1.8); stain(to, 0xffc107, 4); floatText(top.clone().setY(top.y + .5), '🍳', '#fff'); wobble(to); }
-    else { for (let k = 0; k < 3; k++) setTimeout(() => floatText(to.mesh.position.clone().add(new THREE.Vector3(rand(-.3, .3), 1 + k * .2, 0)), '❤️', '#ff4081'), k * 180); }
+    const tp = top();
+    switch (item) {
+      case 'brick': burst(tp, 0xb5523b, 12, 1.1, 3); say('💥'); wobble(to); break;
+      case 'poop': burst(tp, 0x6d4c41, 14, 0.9, 2.5); stain(to, 0x5d4037, 6); say('💩'); wobble(to); break;
+      case 'egg': burst(tp, 0xfff8e1, 8, .8, 2.2); burst(tp, 0xffc107, 6, .9, 1.8); stain(to, 0xffc107, 4); say('🍳'); wobble(to); break;
+      case 'tomato': burst(tp, 0xe53935, 16, .9, 2.6); burst(tp, 0xffcdd2, 5, .6, 2); stain(to, 0xd32f2f, 7); say('🍅'); wobble(to); break;
+      case 'water': burst(tp, 0x4fc3f7, 22, .7, 3.2); burst(tp, 0xe1f5fe, 10, .5, 2.5); say('💦'); wobble(to); break;
+      case 'cake': burst(tp, 0xffffff, 12, .9, 2); burst(tp, 0xf48fb1, 6, .8, 2); stain(to, 0xfff8e1, 8); say('🎂'); wobble(to); break;
+      case 'slipper': squash(to); burst(tp, 0xffffff, 4, .6, 1.5); say('💫'); break;
+      case 'banana': {
+        const peel = makeProjectile('banana'); peel.position.copy(to.mesh.position); peel.position.y = 0.22; scene.add(peel);
+        slip(to); say('🍌');
+        setTimeout(() => { scene.remove(peel); peel.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); }, 1400);
+        break;
+      }
+      case 'bomb': {
+        burst(tp, 0xff6d00, 18, 1.2, 4); burst(tp, 0xffeb3b, 12, 1, 3.5); burst(tp, 0x616161, 12, 1.6, 2);
+        const ringM = new THREE.MeshBasicMaterial({ color: 0xffab40, transparent: true, side: THREE.DoubleSide, depthWrite: false });
+        const ring = new THREE.Mesh(new THREE.RingGeometry(0.3, 0.42, 24), ringM); ring.rotation.x = -Math.PI / 2; ring.position.set(tp.x, 0.25, tp.z); scene.add(ring);
+        tween(500, t => { ring.scale.setScalar(1 + t * 5); ringM.opacity = 1 - t; }).then(() => { scene.remove(ring); ring.geometry.dispose(); ringM.dispose(); });
+        blast(to); tint(to, 0x424242, 2000); say('BÙM!', '#ff6d00');
+        break;
+      }
+      case 'ice': freeze(to); say('🥶'); break;
+      case 'kiss': for (let k = 0; k < 5; k++) setTimeout(() => floatText(to.mesh.position.clone().add(new THREE.Vector3(rand(-.4, .4), 1 + k * .15, 0)), k % 2 ? '💕' : '💋', '#ff4081'), k * 140); break;
+      default: for (let k = 0; k < 3; k++) setTimeout(() => floatText(to.mesh.position.clone().add(new THREE.Vector3(rand(-.3, .3), 1 + k * .2, 0)), '❤️', '#ff4081'), k * 180);
+    }
   });
 }
 // --- Âm thanh chọc ghẹo ---
@@ -3116,6 +3230,15 @@ function sfxImpact(item) {
   if (item === 'brick') { tone(140, 40, 0.25, 0.5); noiseHit(t, 'lowpass', 900, 0.7, 0.45, 0.22, SND.sfxGain); for (let k = 1; k < 5; k++) noiseHit(t + k * 0.05, 'bandpass', 2500, 3, 0.12, 0.03, SND.sfxGain); }
   else if (item === 'poop') { noiseHit(t, 'lowpass', 500, 2, 0.5, 0.3, SND.sfxGain); tone(220, 60, 0.3, 0.3, 'triangle'); tone(160, 90, 0.18, 0.2, 'sine', t + 0.12); }
   else if (item === 'egg') { for (let k = 0; k < 3; k++) noiseHit(t + k * 0.018, 'highpass', 4000, 1, 0.25, 0.02, SND.sfxGain); noiseHit(t + 0.05, 'lowpass', 1300, 1, 0.3, 0.25, SND.sfxGain); }
+  else if (item === 'tomato' || item === 'cake') { noiseHit(t, 'lowpass', item === 'cake' ? 700 : 1000, 1.5, 0.45, 0.25, SND.sfxGain); tone(300, 90, 0.2, 0.18, 'triangle'); }
+  else if (item === 'water') { tone(900, 300, 0.06, 0.2); noiseHit(t + 0.03, 'highpass', 2500, 0.7, 0.4, 0.45, SND.sfxGain); noiseHit(t + 0.03, 'bandpass', 900, 1, 0.2, 0.3, SND.sfxGain); }
+  else if (item === 'slipper') { noiseHit(t, 'bandpass', 1500, 1.5, 0.5, 0.05, SND.sfxGain); tone(180, 120, 0.08, 0.3); tone(220, 660, 0.35, 0.12, 'sine', t + 0.08); } // "bốp" + "boing"
+  else if (item === 'banana') { tone(1200, 200, 0.6, 0.12, 'sine'); tone(1250, 210, 0.6, 0.08, 'triangle', t + 0.02); }        // tiếng trượt xì
+  else if (item === 'bomb') { tone(90, 30, 0.8, 0.7); noiseHit(t, 'lowpass', 600, 0.6, 0.8, 0.9, SND.sfxGain); noiseHit(t, 'bandpass', 2000, 0.8, 0.3, 0.4, SND.sfxGain); }
+  else if (item === 'thunder') { noiseHit(t, 'highpass', 3000, 0.5, 0.6, 0.12, SND.sfxGain); noiseHit(t + 0.05, 'lowpass', 400, 0.6, 0.7, 1.4, SND.sfxGain); tone(70, 35, 1.2, 0.5); }
+  else if (item === 'ice') { for (let k = 0; k < 4; k++) tone(2400 + k * 500, 2400 + k * 500, 0.25, 0.06, 'sine', t + k * 0.04); }
+  else if (item === 'iceBreak') { for (let k = 0; k < 8; k++) noiseHit(t + k * 0.025, 'highpass', 3500 + Math.random() * 2000, 2, 0.18, 0.04, SND.sfxGain); }
+  else if (item === 'kiss') { noiseHit(t, 'bandpass', 1800, 2, 0.35, 0.06, SND.sfxGain); tone(1200, 500, 0.12, 0.15); [988, 1319].forEach((f, k) => tone(f, f, 0.4, 0.06, 'sine', t + 0.15 + k * 0.1)); }
   else { [880, 1320, 1760].forEach((f, k) => tone(f, f, 0.5, 0.08, 'sine', t + k * 0.09)); }
 }
 // --- Giao diện khung chat ---
