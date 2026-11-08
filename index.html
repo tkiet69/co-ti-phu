@@ -158,6 +158,34 @@
   #tileInfo { position:fixed; left:12px; bottom:12px; width:250px; z-index:6; display:none; }
   #tileInfo.show { display:block; }
   #sndBox { position:fixed; left:254px; top:62px; z-index:7; display:flex; flex-direction:column; gap:8px; }
+  .badge { position:absolute; top:-4px; right:-4px; min-width:18px; height:18px; padding:0 4px; border-radius:9px; background:#e53935; color:#fff;
+    font-size:11px; font-weight:800; line-height:18px; text-align:center; }
+  /* Khung chat */
+  #chatPanel { position:fixed; left:12px; bottom:12px; width:330px; max-height:min(560px, 72vh); z-index:9; display:none; flex-direction:column; gap:6px; padding:10px; }
+  #chatPanel.show { display:flex; animation:sheetUp2 .2s ease-out; }
+  @keyframes sheetUp2 { from { transform:translateY(20px); opacity:0; } to { transform:none; opacity:1; } }
+  .chatHead { display:flex; justify-content:space-between; align-items:center; }
+  #chatLog { flex:1; min-height:90px; max-height:240px; overflow:auto; font-size:13.5px; line-height:1.45; background:#f6f7f9; border-radius:8px; padding:6px 8px; }
+  .cmsg { padding:2px 0; word-wrap:break-word; }
+  .cmsg.mine { background:#fff8e1; border-radius:6px; padding:2px 6px; margin:1px -4px; }
+  .cmsg.sys { color:#6d4c41; font-style:italic; }
+  .bigEmo { font-size:20px; vertical-align:middle; }
+  .tLbl { font-size:12px; font-weight:700; color:#777; margin-bottom:3px; }
+  .tTargets { display:flex; gap:5px; flex-wrap:wrap; margin-bottom:6px; }
+  .tChip { border:2px solid #e0e0e0; background:#fff; border-radius:999px; padding:3px 9px 3px 6px; font-size:12.5px; font-weight:700; cursor:pointer;
+    display:flex; align-items:center; gap:4px; font-family:inherit; max-width:140px; overflow:hidden; white-space:nowrap; }
+  .tChip.sel { border-color:var(--pc); background:color-mix(in srgb, var(--pc) 14%, #fff); }
+  .tItems { display:grid; grid-template-columns:repeat(4, 1fr); gap:6px; }
+  .tItem { border:none; border-radius:10px; background:#fff3e0; font-size:24px; padding:6px 2px 4px; cursor:pointer; display:flex; flex-direction:column; align-items:center;
+    box-shadow:0 2px 0 #ffcc80; font-family:inherit; transition:transform .1s; }
+  .tItem small { font-size:11px; font-weight:700; color:#6d4c41; }
+  .tItem:active { transform:translateY(2px) scale(.95); box-shadow:none; }
+  .emoRow { display:flex; flex-wrap:wrap; gap:2px; }
+  .emo { border:none; background:none; font-size:21px; cursor:pointer; padding:2px 3px; border-radius:6px; }
+  .emo:hover { background:#eceff1; transform:scale(1.15); }
+  #chatForm { display:flex; gap:6px; }
+  #chatIn { flex:1; min-width:0; padding:8px 10px; border:2px solid #e0e0e0; border-radius:10px; font-family:inherit; font-size:14px; }
+  #chatIn:focus { outline:none; border-color:#1e88e5; }
   .roundBtn { width:42px; height:42px; border-radius:50%; border:none; cursor:pointer; background:rgba(255,255,255,.94);
     box-shadow:0 2px 8px rgba(0,0,0,.3); font-size:19px; position:relative; }
   .roundBtn.off { opacity:.55; }
@@ -321,6 +349,10 @@
     @keyframes sheetUp { from { transform:translateY(40px); opacity:0; } to { transform:none; opacity:1; } }
     #camBtn { left:auto; right:10px; }
     #sndBox { left:auto; right:10px; }
+    #chatPanel { left:8px; right:8px; bottom:8px; width:auto; max-height:72vh; z-index:14; box-shadow:0 -6px 30px rgba(0,0,0,.35); }
+    #chatLog { max-height:26vh; }
+    .emo { font-size:20px; }
+    #chatIn { font-size:16px; } /* 16px để iPhone không tự phóng to khi gõ */
     .roundBtn { width:38px; height:38px; font-size:17px; }
     #hint { display:none; }
   }
@@ -343,6 +375,14 @@
 <div id="sndBox">
   <button class="roundBtn" id="musicBtn" title="Tắt nhạc" onclick="audioInit(); setMusic(!SND.music)">🎵</button>
   <button class="roundBtn" id="sfxBtn" title="Tắt tiếng xúc xắc" onclick="audioInit(); setSfx(!SND.sfx)">🔊</button>
+  <button class="roundBtn" id="chatBtn" title="Trò chuyện & chọc ghẹo" style="display:none">💬<span class="badge" id="chatBadge" style="display:none"></span></button>
+</div>
+<div class="panel" id="chatPanel">
+  <div class="chatHead"><b>💬 Trò chuyện</b><button class="iconbtn" id="chatClose" title="Đóng">✕</button></div>
+  <div id="chatLog"><div class="cmsg sys">Nhắn tin, thả emoji hoặc ném đồ chọc nhau nhé! 😆</div></div>
+  <div id="teaseRow"></div>
+  <div class="emoRow" id="emoRow"></div>
+  <form id="chatForm"><input id="chatIn" maxlength="120" placeholder="Nhắn gì đó…" autocomplete="off"><button class="btn sm">Gửi</button></form>
 </div>
 <div id="bigAction"></div>
 <div id="toast"></div>
@@ -2172,6 +2212,210 @@ async function startTurn() {
   if (p.isBot) await botTurn(); else await humanTurn(p);
 }
 
+// ================== CHAT & CHỌC GHẸO ==================
+// Không thuộc luật chơi nên đi kênh riêng ('ctp.chat'), không qua hàng đợi lockstep.
+// Người chơi được nhận diện bằng p.idx (thứ tự lúc tạo, giống nhau trên mọi máy).
+const TEASE = { brick: ['🧱', 'Gạch', 'ném gạch vào'], poop: ['💩', 'Phân', 'ném phân vào'], egg: ['🥚', 'Trứng', 'chọi trứng vào'], rose: ['🌹', 'Hoa', 'tặng hoa cho'] };
+const QUICK_EMO = ['😂', '😎', '😡', '😭', '🥳', '👍', '🤡', '💸', '🙏', '❤️', '🔥', '😱'];
+const CHAT = { open: false, unread: 0, target: null, cool: 0, bubbles: {} };
+const byIdx = i => state.players.find(p => p.idx === i);
+const mePlayer = () => { const c = cur(); return NET.online ? state.players.find(isLocal) : (isLocal(c) ? c : state.players.find(isLocal)); };
+function chatSend(obj, byUser) {
+  if (NET.online && NET.room) NET.room.emit('ctp.chat', obj).catch(() => {});
+  else chatRecv(obj, 'local');
+  // điện thoại: khung chat che bàn cờ → đóng lại để thấy đồ bay / bong bóng lời nói
+  if (byUser && innerWidth < 760) chatToggle(false);
+}
+function chatRecv(d, peer) {
+  if (!d || typeof d !== 'object' || !NET.started) return;
+  let from = null;
+  if (Number.isInteger(d.from) && d.from >= 0) {
+    const q = byIdx(d.from); if (!q) return;
+    const ok = !NET.online || (q.human && q.peer === peer) || (!q.human && peer === NET.hostPeer);
+    if (!ok) return;
+    from = q;
+  } else if (NET.online && !state.players.some(q => q.human && q.peer === peer) && d.t === 'throw') return;
+  const who = from ? pn(from) : '<b>👀 Khán giả</b>';
+  if (d.t === 'say' && typeof d.text === 'string') {
+    const text = d.text.replace(/[\u0000-\u001f]/g, '').trim().slice(0, 120); if (!text) return;
+    chatLine(`${who}: ${esc(text)}`, from);
+    if (from) bubble(from, text);
+  } else if (d.t === 'emo' && QUICK_EMO.includes(d.e)) {
+    chatLine(`${who}: <span class="bigEmo">${d.e}</span>`, from);
+    if (from) bubble(from, d.e, true);
+  } else if (d.t === 'throw' && TEASE[d.item] && Number.isInteger(d.to)) {
+    const to = byIdx(d.to); if (!to || !from || to === from || to.bankrupt) return;
+    const [ic, , verb] = TEASE[d.item];
+    chatLine(`${ic} ${pn(from)} ${verb} ${pn(to)}!`, from, 'sys');
+    log(`${ic} ${pn(from)} ${verb} ${pn(to)}!`);
+    throwFx(from, to, d.item);
+    // máy bị chọc thì phản ứng lại (chỉ một máy quyết định: chơi trên máy này, hoặc chủ phòng)
+    if (!to.human && (!NET.online || NET.role === 'host') && Math.random() < 0.8) setTimeout(() => {
+      if (to.bankrupt) return;
+      if (d.item === 'rose') chatSend({ t: 'emo', from: to.idx, e: Math.random() < 0.5 ? '❤️' : '🥳' });
+      else if (Math.random() < 0.45 && !from.bankrupt) chatSend({ t: 'throw', from: to.idx, to: from.idx, item: d.item });
+      else chatSend({ t: 'emo', from: to.idx, e: ['😡', '😭', '😱', '🤡'][Math.floor(Math.random() * 4)] });
+    }, 1300 + Math.random() * 900);
+  }
+}
+function chatLine(html, from, cls) {
+  const box = $('chatLog'), d = document.createElement('div');
+  d.className = 'cmsg' + (cls ? ' ' + cls : '') + (from && isLocal(from) ? ' mine' : '');
+  d.innerHTML = html; box.appendChild(d);
+  while (box.children.length > 80) box.removeChild(box.firstChild);
+  box.scrollTop = box.scrollHeight;
+  if (!CHAT.open) { CHAT.unread++; const b = $('chatBadge'); b.textContent = CHAT.unread > 9 ? '9+' : CHAT.unread; b.style.display = ''; }
+}
+// Bong bóng lời nói nổi trên quân cờ
+function bubble(p, text, big) {
+  if (!p.mesh || !p.mesh.visible) return;
+  const t = [...text].length > 22 ? [...text].slice(0, 21).join('') + '…' : text;
+  const cv = document.createElement('canvas'); cv.width = 512; cv.height = 160;
+  const c = cv.getContext('2d'); c.font = `700 ${big ? 92 : 50}px ${FONT}`;
+  const w = Math.min(500, c.measureText(t).width + 56), x0 = (512 - w) / 2;
+  c.fillStyle = '#fff'; c.strokeStyle = p.color; c.lineWidth = 8;
+  c.beginPath(); c.roundRect ? c.roundRect(x0, 8, w, 112, 30) : c.rect(x0, 8, w, 112);
+  c.moveTo(236, 118); c.lineTo(256, 152); c.lineTo(276, 118); c.fill(); c.stroke();
+  c.fillStyle = '#fff'; c.fillRect(240, 112, 32, 8);
+  c.fillStyle = '#1d1d1f'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(t, 256, 66);
+  const mat = new THREE.SpriteMaterial({ map: canvasTex(cv), transparent: true, depthTest: false });
+  const s = new THREE.Sprite(mat); s.scale.set(3.2, 1, 1); s.renderOrder = 12; scene.add(s);
+  const old = CHAT.bubbles[p.idx]; if (old) old.kill();
+  let alive = true;
+  const kill = () => { if (!alive) return; alive = false; scene.remove(s); mat.map.dispose(); mat.dispose(); };
+  CHAT.bubbles[p.idx] = { kill };
+  const t0 = performance.now();
+  const step = () => {
+    if (!alive) return;
+    const k = (performance.now() - t0) / 3200;
+    s.position.copy(p.mesh.position); s.position.y += 1.25 + Math.min(1, k * 8) * 0.15;
+    mat.opacity = k < .85 ? Math.min(1, k * 8) : Math.max(0, 1 - (k - .85) / .15);
+    if (k >= 1) kill(); else requestAnimationFrame(step);
+  };
+  step();
+}
+// --- Đồ ném 3D ---
+function makeProjectile(item) {
+  const g = new THREE.Group(), M = (c, o = {}) => new THREE.MeshStandardMaterial({ color: c, roughness: .7, ...o });
+  if (item === 'brick') {
+    const b = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.11, 0.13), M(0xb5523b)); g.add(b);
+  } else if (item === 'poop') {
+    const m = M(0x6d4c41, { roughness: .4 });
+    [[0.13, 0], [0.1, 0.09], [0.07, 0.165]].forEach(([r, y]) => { const s = new THREE.Mesh(new THREE.SphereGeometry(r, 14, 10), m); s.position.y = y; s.scale.y = 0.75; g.add(s); });
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.07, 10), m); tip.position.y = 0.22; g.add(tip);
+  } else if (item === 'egg') {
+    const e = new THREE.Mesh(new THREE.SphereGeometry(0.09, 16, 12), M(0xfff8e1, { roughness: .3 })); e.scale.y = 1.3; g.add(e);
+  } else {
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.07, 12, 10), M(0xe53935)); head.position.y = 0.16; g.add(head);
+    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.26, 6), M(0x2e7d32)); stem.position.y = 0.03; g.add(stem);
+    const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), M(0x43a047)); leaf.scale.set(1.6, 0.4, 0.8); leaf.position.set(0.04, 0.02, 0); g.add(leaf);
+  }
+  g.traverse(o => { if (o.isMesh) o.castShadow = true; });
+  return g;
+}
+const chunkGeo = new THREE.BoxGeometry(0.06, 0.06, 0.06);
+function burst(pos, color, n, size = 1, up = 3) {
+  const mat = new THREE.MeshStandardMaterial({ color, roughness: .6 });
+  for (let k = 0; k < n; k++) {
+    const m = new THREE.Mesh(chunkGeo, mat); m.scale.setScalar(size * rand(.6, 1.4)); m.position.copy(pos); scene.add(m);
+    const vx = rand(-1.4, 1.4), vz = rand(-1.4, 1.4), vy = rand(up * .5, up), rx = rand(5, 14);
+    tween(800, t => { const s = t * .8; m.position.set(pos.x + vx * s, Math.max(0.21, pos.y + vy * s - 4.9 * s * s), pos.z + vz * s); m.rotation.x = rx * s; })
+      .then(() => scene.remove(m));
+  }
+  setTimeout(() => mat.dispose(), 900);
+}
+// vết bẩn dính trên quân cờ vài giây
+function stain(p, color, n) {
+  const mat = new THREE.MeshStandardMaterial({ color, roughness: .35, transparent: true });
+  const grp = new THREE.Group();
+  for (let k = 0; k < n; k++) {
+    const s = new THREE.Mesh(new THREE.SphereGeometry(rand(.04, .07), 10, 8), mat);
+    s.scale.y = 0.5; s.position.set(rand(-.09, .09), rand(.28, .5), rand(-.09, .09)); grp.add(s);
+  }
+  p.mesh.add(grp);
+  setTimeout(() => tween(800, t => { mat.opacity = 1 - t; }).then(() => { p.mesh.remove(grp); grp.traverse(o => o.geometry && o.geometry.dispose()); mat.dispose(); }), 4500);
+}
+function wobble(p) {
+  const r0 = p.mesh.rotation.z;
+  tween(600, t => { p.mesh.rotation.z = r0 + Math.sin(t * Math.PI * 6) * 0.35 * (1 - t); }).then(() => { p.mesh.rotation.z = r0; });
+}
+function throwFx(from, to, item) {
+  if (!to.mesh || !to.mesh.visible) return;
+  const a = from && from.mesh && from.mesh.visible ? from.mesh.position.clone() : new THREE.Vector3(0, 6, 0); a.y += 0.6;
+  const b = to.mesh.position.clone(); b.y += 0.42;
+  const m = makeProjectile(item); m.position.copy(a); scene.add(m);
+  const dist = a.distanceTo(b), h = 1.4 + dist * 0.14, spin = rand(8, 14);
+  sfxWhoosh();
+  tween(550 + dist * 35, t => {
+    m.position.lerpVectors(a, b, t); m.position.y += Math.sin(Math.PI * t) * h;
+    if (item !== 'rose') m.rotation.set(t * spin, t * spin * .6, 0); else m.rotation.z = t * 4;
+  }).then(() => {
+    scene.remove(m); m.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
+    sfxImpact(item);
+    const top = to.mesh.position.clone(); top.y += 0.5;
+    if (item === 'brick') { burst(top, 0xb5523b, 12, 1.1, 3); floatText(top.clone().setY(top.y + .5), '💥', '#fff'); wobble(to); }
+    else if (item === 'poop') { burst(top, 0x6d4c41, 14, 0.9, 2.5); stain(to, 0x5d4037, 6); floatText(top.clone().setY(top.y + .5), '💩', '#fff'); wobble(to); }
+    else if (item === 'egg') { burst(top, 0xfff8e1, 8, .8, 2.2); burst(top, 0xffc107, 6, .9, 1.8); stain(to, 0xffc107, 4); floatText(top.clone().setY(top.y + .5), '🍳', '#fff'); wobble(to); }
+    else { for (let k = 0; k < 3; k++) setTimeout(() => floatText(to.mesh.position.clone().add(new THREE.Vector3(rand(-.3, .3), 1 + k * .2, 0)), '❤️', '#ff4081'), k * 180); }
+  });
+}
+// --- Âm thanh chọc ghẹo ---
+function sfxWhoosh() {
+  const ctx = SND.ctx; if (!ctx || !SND.sfx) return;
+  const t = ctx.currentTime, s = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+  s.buffer = SND.noise; f.type = 'bandpass'; f.Q.value = 2; f.frequency.setValueAtTime(400, t); f.frequency.exponentialRampToValueAtTime(2200, t + 0.35);
+  s.connect(f); f.connect(g); env(g, t, 0.18, 0.12, 0.3); g.connect(SND.sfxGain); s.start(t); s.stop(t + 0.5);
+}
+function sfxImpact(item) {
+  const ctx = SND.ctx; if (!ctx || !SND.sfx) return;
+  const t = ctx.currentTime;
+  const tone = (f0, f1, dur, vol, type = 'sine', at = t) => {
+    const o = ctx.createOscillator(), g = ctx.createGain(); o.type = type;
+    o.frequency.setValueAtTime(f0, at); o.frequency.exponentialRampToValueAtTime(f1, at + dur);
+    o.connect(g); env(g, at, vol, 0.004, dur); g.connect(SND.sfxGain); o.start(at); o.stop(at + dur + 0.05);
+  };
+  if (item === 'brick') { tone(140, 40, 0.25, 0.5); noiseHit(t, 'lowpass', 900, 0.7, 0.45, 0.22, SND.sfxGain); for (let k = 1; k < 5; k++) noiseHit(t + k * 0.05, 'bandpass', 2500, 3, 0.12, 0.03, SND.sfxGain); }
+  else if (item === 'poop') { noiseHit(t, 'lowpass', 500, 2, 0.5, 0.3, SND.sfxGain); tone(220, 60, 0.3, 0.3, 'triangle'); tone(160, 90, 0.18, 0.2, 'sine', t + 0.12); }
+  else if (item === 'egg') { for (let k = 0; k < 3; k++) noiseHit(t + k * 0.018, 'highpass', 4000, 1, 0.25, 0.02, SND.sfxGain); noiseHit(t + 0.05, 'lowpass', 1300, 1, 0.3, 0.25, SND.sfxGain); }
+  else { [880, 1320, 1760].forEach((f, k) => tone(f, f, 0.5, 0.08, 'sine', t + k * 0.09)); }
+}
+// --- Giao diện khung chat ---
+function chatToggle(open) {
+  CHAT.open = open === undefined ? !CHAT.open : open;
+  $('chatPanel').classList.toggle('show', CHAT.open);
+  if (CHAT.open) { CHAT.unread = 0; $('chatBadge').style.display = 'none'; renderTease(); $('chatLog').scrollTop = $('chatLog').scrollHeight; }
+}
+function renderTease() {
+  const me = mePlayer(), row = $('teaseRow');
+  if (!me) { row.innerHTML = '<div class="muted" style="font-size:12px">👀 Bạn đang xem — chỉ người chơi mới ném được.</div>'; return; }
+  const others = state.players.filter(p => p !== me && !p.bankrupt);
+  if (!others.length) { row.innerHTML = ''; return; }
+  if (!others.some(p => p.idx === CHAT.target)) CHAT.target = others[0].idx;
+  row.innerHTML = `<div class="tLbl">Chọc ai?</div><div class="tTargets">${others.map(p =>
+      `<button type="button" class="tChip ${p.idx === CHAT.target ? 'sel' : ''}" data-t="${p.idx}" style="--pc:${p.color}"><span class="dot" style="background:${p.color}"></span>${esc(p.name)}</button>`).join('')}</div>
+    <div class="tItems">${Object.entries(TEASE).map(([k, [ic, lb]]) => `<button type="button" class="tItem" data-item="${k}">${ic}<small>${lb}</small></button>`).join('')}</div>`;
+}
+(function chatUI() {
+  $('emoRow').innerHTML = QUICK_EMO.map(e => `<button type="button" class="emo" data-e="${e}">${e}</button>`).join('');
+  const me = () => mePlayer();
+  $('chatBtn').onclick = () => { audioInit(); chatToggle(); };
+  $('chatClose').onclick = () => chatToggle(false);
+  $('emoRow').onclick = e => { const b = e.target.closest('[data-e]'); if (!b) return; const p = me(); chatSend({ t: 'emo', from: p ? p.idx : -1, e: b.dataset.e }, true); };
+  $('chatForm').onsubmit = e => {
+    e.preventDefault(); const inp = $('chatIn'), text = inp.value.trim(); if (!text) return;
+    const p = me(); chatSend({ t: 'say', from: p ? p.idx : -1, text: text.slice(0, 120) }, true); inp.value = ''; if (innerWidth < 760) inp.blur();
+  };
+  $('teaseRow').onclick = e => {
+    const c = e.target.closest('[data-t]'); if (c) { CHAT.target = +c.dataset.t; renderTease(); return; }
+    const it = e.target.closest('[data-item]'); if (!it) return;
+    const p = me(); if (!p || CHAT.target == null) return;
+    if (performance.now() < CHAT.cool) { toast('⏳ Từ từ thôi, chờ chút rồi ném tiếp!', 1000); return; }
+    CHAT.cool = performance.now() + 1500;
+    audioInit();
+    chatSend({ t: 'throw', from: p.idx, to: CHAT.target, item: it.dataset.item }, true);
+  };
+})();
+
 // ================== BẮT ĐẦU ==================
 async function setup() {
   const defs = [['Bạn','human'], ['Máy Hà Nội','bot'], ['Máy Sài Gòn','bot'], ['Máy Đà Nẵng','bot']];
@@ -2423,6 +2667,7 @@ async function setup() {
     const room = NET.room;
     // tin nhắn trong ván (có thể tới trước khi ván bắt đầu trên máy này)
     room.on('ctp.in', msg => { if (!validInput(msg.data)) return; if (!NET.started) NET.preQ.push([msg.data, msg.peer]); else acceptInput(msg.data, msg.peer); });
+    room.on('ctp.chat', msg => chatRecv(msg.data, msg.peer));
     room.on('ctp.need', msg => { const st = msg.data && msg.data.st; const m = Number.isInteger(st) && NET.sentLog[st]; if (m) room.emit('ctp.in', m).catch(() => {}); });
     room.on('ctp.start', msg => { if (role === 'guest' && msg.peer === hostPeer && !NET.started) { const cfg = validCfg(msg.data); if (cfg) startRes(cfg); } });
     room.onPeers(ch => {
@@ -2540,6 +2785,7 @@ async function setup() {
   NET.online = online();
   NET.me = online() ? myPeer : 'local';
   NET.role = role;
+  NET.hostPeer = role === 'host' ? myPeer : hostPeer; // chủ phòng nói thay các máy (bot) trong chat
   await beginGame(cfg);
 }
 
@@ -2557,6 +2803,7 @@ async function beginGame(cfg) {
   });
   NET.started = true;
   NET.preQ.splice(0).forEach(([m, peer]) => acceptInput(m, peer));
+  $('chatBtn').style.display = '';
   log('Chào mừng tới <b>Cờ Tỉ Phú Việt Nam</b>! 🇻🇳');
   if (NET.online) {
     const me = state.players.find(isLocal);
