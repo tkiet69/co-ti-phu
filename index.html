@@ -1415,22 +1415,16 @@ function refreshTile(i, animateNew) {
     else buildFx(ch[ch.length - 2], ch[ch.length - 1], false);
   }
 }
-// Hiệu ứng xây: giàn giáo hiện ra → thân nhà mọc lên kèm tiếng búa → mái rơi xuống khớp → bụi tung
-const scaffoldMat = new THREE.LineBasicMaterial({ color: 0xffc107 });
+// Hiệu ứng xây: 🔨 hiện ra → thân nhà mọc lên kèm tiếng búa → mái rơi xuống khớp → bụi tung
 function buildFx(body, roof, hotel) {
   const parent = body.parent; if (!parent) return;
   const bodyY = body.position.y, sc = body.scale.clone();
   const roofY = roof ? roof.position.y : 0;
-  // giàn giáo vàng (khung dây) bao quanh chỗ sắp xây
-  const box = new THREE.Box3().setFromObject(body); const size = box.getSize(new THREE.Vector3());
-  const sg = new THREE.EdgesGeometry(new THREE.BoxGeometry(hotel ? 0.62 : 0.22, hotel ? 0.42 : 0.3, hotel ? 0.36 : 0.22));
-  const scaf = new THREE.LineSegments(sg, scaffoldMat);
-  scaf.position.set(body.position.x, hotel ? 0.2 + 0.21 : 0.35, body.position.z); parent.add(scaf);
   body.scale.set(sc.x, 0.001, sc.z); body.position.y = hotel ? 0.2 : bodyY - 0.07;
   if (roof) { roof.visible = false; }
   const wp = new THREE.Vector3(); body.getWorldPosition(wp);
   floatText(wp.clone().setY(wp.y + 0.8), '🔨', '#fff');
-  // giàn giáo đứng một lúc, rồi thân nhà mọc lên chậm rãi, búa gõ suốt lúc xây
+  // chờ một nhịp, rồi thân nhà mọc lên chậm rãi, búa gõ suốt lúc xây
   const RISE = hotel ? 1800 : 1300;
   tween(400, () => {}).then(() => { sfxHammer(hotel ? 12 : 9); return tween(RISE, t => {
     const e = 1 - Math.pow(1 - t, 3);
@@ -1445,7 +1439,6 @@ function buildFx(body, roof, hotel) {
     }
   }).then(() => {
     if (roof) roof.position.y = roofY;
-    parent.remove(scaf); sg.dispose();
     body.getWorldPosition(wp); wp.y = 0.25;
     burst(wp, 0xd7ccc8, hotel ? 16 : 10, 0.8, 1.6);           // bụi
     if (hotel) { burst(wp.clone().setY(0.6), 0xffc107, 14, 0.7, 3.5); floatText(wp.clone().setY(1.2), '🏨', '#fff'); }
