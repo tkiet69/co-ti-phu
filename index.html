@@ -1410,9 +1410,10 @@ function animate() {
 //  🔄 rotate — xoay cả bàn cờ để cạnh có quân cờ đang đi luôn ở phía trước mặt
 //  🗺️ board  — đứng yên, thấy cả bàn
 // Tự dừng khi người chơi tự kéo/xoay bàn, 5 giây sau khi thả tay thì chạy lại.
-const CAM_MODES = { follow: ['🎯', 'Bám theo quân cờ'], rotate: ['🔄', 'Xoay bàn theo người chơi'], board: ['🗺️', 'Xem cả bàn cờ'] };
+const CAM_MODES = { follow: ['🎯', 'Bám theo quân cờ'], rotate: ['🔄', 'Xoay bàn theo người chơi'], board: ['🗺️', 'Cam tự do'] };
 const CAM_ORDER = ['follow', 'rotate', 'board'];
-const cam = { mode: (() => { try { const m = localStorage.getItem('ctp-cam'); if (CAM_MODES[m]) return m; } catch (e) {} return innerWidth < 760 ? 'follow' : 'board'; })(), userUntil: 0, ang: 0 };
+// Mặc định: máy tính → cam tự do; điện thoại → xoay theo hướng nhân vật (lựa chọn của người chơi được nhớ lại)
+const cam = { mode: (() => { try { const m = localStorage.getItem('ctp-cam2'); if (CAM_MODES[m]) return m; } catch (e) {} return innerWidth < 760 ? 'rotate' : 'board'; })(), userUntil: 0, ang: 0 };
 controls.addEventListener('start', () => { cam.userUntil = Infinity; });
 controls.addEventListener('end', () => { cam.userUntil = performance.now() + 5000; });
 const _goal = new THREE.Vector3(), _want = new THREE.Vector3(), DESK_DIR = new THREE.Vector3(0, 15, 14).normalize();
@@ -1438,9 +1439,9 @@ function followCam() {
   controls.target.lerp(_goal, 0.06);
   camera.position.lerp(_want, 0.06);
 }
-function setCamMode(m) {
+function setCamMode(m, save = true) {
   cam.mode = m; cam.userUntil = 0;
-  try { localStorage.setItem('ctp-cam', m); } catch (e) {}
+  if (save) try { localStorage.setItem('ctp-cam2', m); } catch (e) {} // chỉ nhớ khi người chơi tự đổi
   if (m === 'board') { placeCamera(); controls.target.set(0, 0, 0); controls.update(); }
   if (m === 'rotate') { const a = Math.atan2(camera.position.x - controls.target.x, camera.position.z - controls.target.z); cam.ang = a; }
   const b = $('camBtn'); if (b) { b.textContent = CAM_MODES[m][0]; b.title = 'Camera: ' + CAM_MODES[m][1] + ' (bấm để đổi)'; }
@@ -1449,7 +1450,7 @@ function cycleCam() {
   const m = CAM_ORDER[(CAM_ORDER.indexOf(cam.mode) + 1) % CAM_ORDER.length];
   setCamMode(m); toast(`${CAM_MODES[m][0]} Camera: ${CAM_MODES[m][1]}`, 1400);
 }
-setCamMode(cam.mode);
+setCamMode(cam.mode, false);
 let lastNarrow = innerWidth < 760, lastPortrait = innerWidth < innerHeight;
 addEventListener('resize', () => {
   camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight);
