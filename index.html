@@ -1181,14 +1181,18 @@ function coinClink(t, vol) {
     o.connect(g); env(g, t, vol / (k + 1.2), 0.001, 0.12 + 0.18 / (k + 1)); g.connect(SND.sfxGain); o.start(t); o.stop(t + 0.4); });
   noiseHit(t, 'highpass', 5000, 1, vol * 0.5, 0.01, SND.sfxGain);
 }
-function sfxCoins(amt) {
+// Trừ tiền (kiểu 7 người chơi chọn): "tèn tèn tẹt" 8-bit đi xuống như máy chơi game cổ mất xu
+function sfxCoins() {
   const ctx = SND.ctx; if (!ctx || !SND.sfx) return;
-  const now = performance.now(); if (now - lastCoin < 150) return; lastCoin = now;
-  const t = ctx.currentTime + 0.02, coins = Math.round(Math.min(9, 2 + Math.sqrt(Math.abs(amt)) / 4));
-  for (let c = 0; c < coins; c++) {
-    let tt = t + c * 0.07 + Math.random() * 0.05, v = 0.14, gap = 0.11 + Math.random() * 0.04;
-    for (let b = 0; b < 4; b++) { coinClink(tt, v); tt += gap; gap *= 0.62; v *= 0.55; } // mỗi xu nảy vài lần rồi nằm im
-  }
+  const now = performance.now(); if (now - lastCoin < 400) return; lastCoin = now;
+  const t = ctx.currentTime + 0.02;
+  const sq = (f0, f1, at, dur, vol) => {
+    const o = ctx.createOscillator(), g = ctx.createGain(); o.type = 'square';
+    o.frequency.setValueAtTime(f0, at); if (f1 !== f0) o.frequency.exponentialRampToValueAtTime(f1, at + dur);
+    o.connect(g); env(g, at, vol, 0.005, dur); g.connect(SND.sfxGain); o.start(at); o.stop(at + dur + 0.05);
+  };
+  [988, 784, 659, 523, 392].forEach((f, k) => sq(f, f, t + k * 0.075, 0.07, 0.09));
+  sq(330, 220, t + 0.4, 0.25, 0.09);
 }
 function setMusic(on) {
   SND.music = on; try { localStorage.setItem('ctp-music', on ? '1' : '0'); } catch (e) {}
