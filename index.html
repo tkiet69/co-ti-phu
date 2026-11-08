@@ -25,6 +25,7 @@
   .dot { width:12px; height:12px; border-radius:50%; display:inline-block; flex:none; }
   .pmoney { font-size:20px; font-weight:800; color:#1b5e20; }
   .pinfo { font-size:12px; color:#555; }
+  .passetM { display:none; }
 
   #side { position:fixed; top:12px; right:12px; width:310px; max-height:calc(100vh - 24px); display:flex; flex-direction:column; gap:8px; z-index:5; }
   .panel { background:var(--panel); border-radius:10px; padding:10px; box-shadow:0 2px 8px rgba(0,0,0,.25); }
@@ -283,6 +284,7 @@
   @media (min-width:760px) and (max-height:520px) {
     #players { width:190px; gap:5px; top:8px; left:8px; }
     .pcard { padding:5px 8px; } .pmoney { font-size:16px; } .pinfo { display:none; }
+    .passetM { display:block; font-size:11.5px; color:#455a64; white-space:nowrap; }
     .pname { white-space:nowrap; overflow:hidden; font-size:14px; } #hint { display:none; }
     .turnArrow { font-size:22px; right:-30px; }
     #side { width:250px; top:8px; right:8px; max-height:calc(100vh - 16px); }
@@ -294,6 +296,12 @@
     #players { right:8px; left:8px; top:8px; width:auto; flex-direction:row; overflow-x:auto; }
     .pcard { min-width:120px; padding:6px 8px; }
     .pmoney { font-size:16px; } .pinfo { display:none; }
+    .passetM { display:block; font-size:11.5px; color:#455a64; white-space:nowrap; margin-top:1px; }
+    /* Ẩn khung "Lượt của…": chỉ giữ các nút cần bấm */
+    #actions:not(.hasBtns) { display:none; }
+    #actions .turn, #actions > .muted { display:none; }
+    #actions { padding:8px; }
+    #actions .waitNote { margin-top:0; }
     .pcard.active { transform:none; }
     .turnArrow { position:static; transform:none; font-size:18px; animation-name:arrowBlinkM; }
     .pname { white-space:nowrap; }
@@ -1414,6 +1422,7 @@ function log(html, cls) {
     tog.textContent = exp ? '▴' : '▾'; tog.title = exp ? 'Thu gọn' : 'Mở rộng';
     show.classList.toggle('show', panel.classList.contains('hidden'));
     $('log').scrollTop = $('log').scrollHeight;
+    placeBig(); // khung dưới đổi chiều cao → dời nút lớn theo (điện thoại)
   };
   tog.onclick = () => { panel.classList.toggle('expanded'); sync(); save(); setTimeout(sync, 320); };
   $('logHide').onclick = () => { panel.classList.add('hidden'); sync(); save(); };
@@ -1477,16 +1486,26 @@ function showTileInfo(i) {
   el.classList.add('show');
 }
 
+// Tổng tài sản = tiền mặt + giá trị đất (đất thế chấp chỉ tính phần còn lại) + nhà/khách sạn đã xây
+function netWorth(p) {
+  return p.money + ownedBy(p).reduce((s, i) => {
+    const t = TILES[i], o = state.own[i];
+    return s + (o.mortgaged ? t.price - mortVal(i) : t.price) + (t.group ? o.houses * GROUPS[t.group].h : 0);
+  }, 0);
+}
 function renderPlayers() {
   $('players').innerHTML = teamBar() + state.players.map((p, i) => {
     const owned = ownedBy(p), mort = owned.filter(j => state.own[j].mortgaged).length, live = owned.length - mort;
-    const info = p.bankrupt ? 'Đã phá sản' : `${esc(TILES[p.pos].name)}${p.inJail ? ' · 🔒 trong tù' : ''}<br>🏠 ${live} hiện hữu · 📜 ${mort} thế chấp${p.jailCards ? ` · 🎫×${p.jailCards}` : ''}`;
+    const worth = netWorth(p);
+    const info = p.bankrupt ? 'Đã phá sản' : `${esc(TILES[p.pos].name)}${p.inJail ? ' · 🔒 trong tù' : ''}<br>🏠 ${live} hiện hữu · 📜 ${mort} thế chấp${p.jailCards ? ` · 🎫×${p.jailCards}` : ''}<br>💎 Tổng tài sản <b>${fmt(worth)}</b>`;
+    // điện thoại: dòng tài sản rút gọn (dòng thông tin đầy đủ bị ẩn cho gọn)
+    const assetsM = p.bankrupt ? '' : `<div class="passetM">🏠${live}${mort ? ` · 📜${mort}` : ''}${p.inJail ? ' · 🔒' : ''} · 💎${fmt(worth)}</div>`;
     const act = i === state.cur && state.phase !== 'over' && !p.bankrupt;
     const arrow = act ? `<span class="turnArrow">${innerWidth < 760 ? '▶' : '◀'}</span>` : '';
     const ord = state.phase === 'order' && p.orderRoll && p.orderRoll.length ? `<span class="orderRoll">🎲 ${p.orderRoll.join(' · ')}</span>` : '';
     return `<div class="pcard ${act ? 'active' : ''} ${p.bankrupt ? 'out' : ''}" style="border-left-color:${p.color}">
       <div class="pname">${innerWidth < 760 ? arrow : ''}<span class="dot" style="background:${p.color}"></span>${shapeIcon(p.shape)} ${esc(p.name)}${p.isBot ? ' 🤖' : ''}${NET.online && isLocal(p) ? ' <span class="youTag">BẠN</span>' : ''}${NET.online && p.human && !p.isBot && !isLocal(p) ? ' 🌐' : ''}${p.gone && !p.isBot ? ' ⚠️' : ''}${p.team ? ' ' + teamBadge(p.team) : ''}${ord}</div>${innerWidth < 760 ? '' : arrow}
-      <div class="pmoney">${p.bankrupt ? '—' : fmt(p.money)}</div><div class="pinfo">${info}</div></div>`;
+      <div class="pmoney">${p.bankrupt ? '—' : fmt(p.money)}</div><div class="pinfo">${info}</div>${assetsM}</div>`;
   }).join('');
   // điện thoại: cuộn thanh người chơi tới người đang tới lượt
   const pl = $('players'), ac = pl.querySelector('.pcard.active');
@@ -1495,14 +1514,18 @@ function renderPlayers() {
     pl.scrollTo({ left: ac.offsetLeft - pl.clientWidth / 2 + ac.offsetWidth / 2, behavior: 'smooth' });
   }
 }
-// Trên điện thoại: đặt nút lớn ngay dưới thanh người chơi ở đầu màn hình
+// Trên điện thoại: nút lớn nằm dưới, ngay trên khung tài sản / nhật ký (gần ngón cái)
 function placeBig() {
-  const b = $('bigAction');
-  b.style.top = innerWidth < 760 ? ($('players').getBoundingClientRect().bottom + 10) + 'px' : '';
-  $('camBtn').style.top = ($('players').getBoundingClientRect().bottom + 12) + 'px';
-  // thông báo nổi nằm ngay dưới nút lớn
+  const b = $('bigAction'), mobile = innerWidth < 760;
+  const plBottom = $('players').getBoundingClientRect().bottom;
+  if (mobile) {
+    const sideTop = $('side').getBoundingClientRect().top;
+    b.style.top = Math.max(plBottom + 10, sideTop - b.offsetHeight - 10) + 'px';
+  } else b.style.top = '';
+  $('camBtn').style.top = (plBottom + 12) + 'px';
+  // thông báo nổi: máy tính → ngay dưới nút lớn; điện thoại → ngay dưới thanh người chơi
   const r = b.getBoundingClientRect();
-  $('toast').style.top = (r.height ? r.bottom + 10 : (innerWidth < 760 ? $('players').getBoundingClientRect().bottom + 10 : 16)) + 'px';
+  $('toast').style.top = (mobile ? plBottom + 10 : r.height ? r.bottom + 10 : 16) + 'px';
 }
 addEventListener('resize', placeBig);
 // Chỉ vẽ lại nút lớn khi nội dung đổi (tránh chạy lại hiệu ứng mỗi lần cập nhật giao diện)
@@ -1514,7 +1537,7 @@ function renderActions() {
   const p = cur(), el = $('actions'), mg = $('manage');
   if (!p) return;
   let big = '';
-  if (state.phase === 'over') { setBig(''); el.innerHTML = '<b>Ván đấu đã kết thúc.</b><div class="btns" style="margin-top:8px"><button class="btn" onclick="location.reload()">Chơi lại</button></div>'; mg.style.display = 'none'; return; }
+  if (state.phase === 'over') { setBig(''); el.innerHTML = '<b>Ván đấu đã kết thúc.</b><div class="btns" style="margin-top:8px"><button class="btn" onclick="location.reload()">Chơi lại</button></div>'; el.classList.add('hasBtns'); mg.style.display = 'none'; placeBig(); return; }
   const w = state.waiting, wp = w && state.players[w.pi];
   // Đang chờ một người ở máy khác: ghi rõ, và cho phép nhờ máy chơi thay nếu người đó đã rời phòng
   const waitNote = wp && !isLocal(wp) && !wp.isBot
@@ -1524,7 +1547,7 @@ function renderActions() {
     const wait = w && w.kinds.includes('orderroll') && isLocal(p) && !state.sent;
     el.innerHTML = `<div class="turn">🎲 Tung xúc xắc chọn thứ tự đi</div><div class="muted">${pn(p)}${p.isBot ? ' 🤖' : ''} ${wait ? 'hãy tung xúc xắc (Space)' : 'đang tung…'}. Ai tung cao nhất sẽ đi trước.</div>${waitNote}`;
     setBig(wait ? `<button class="bigbtn roll" data-act="orderroll"><span class="row"><span class="bi">🎲</span>TUNG CHỌN LƯỢT</span><small>⌨️ SPACE</small></button>` : '');
-    placeBig(); mg.style.display = 'none'; return;
+    el.classList.toggle('hasBtns', !!el.querySelector('button')); mg.style.display = 'none'; placeBig(); return;
   }
   let h = `<div class="turn">Lượt của ${pn(p)}${p.isBot ? ' 🤖' : ''}${NET.online && isLocal(p) ? ' <span class="youTag">BẠN</span>' : ''}</div>`;
   const human = isLocal(p);
@@ -1551,7 +1574,9 @@ function renderActions() {
     if (p.inJail && state.phase === 'roll') h += `<div class="muted" style="margin-top:6px">Bạn đang ở tù (lượt ${p.jailTurns + 1}/3). Tung ra đôi để ra tù miễn phí; hết 3 lượt sẽ được thả, không mất tiền.</div>`;
     if (waitNote) h += waitNote;
   }
-  el.innerHTML = h; setBig(big); placeBig();
+  el.innerHTML = h; setBig(big);
+  // điện thoại: ẩn khung "Lượt của…" — chỉ hiện khi có nút cần bấm (trả tiền ra tù, xây nhà, cho máy chơi thay…)
+  el.classList.toggle('hasBtns', !!el.querySelector('button'));
   // Quản lý tài sản
   const mine = ownedBy(p);
   const mate = teammate(p);
@@ -1575,6 +1600,7 @@ function renderActions() {
       `<button class="btn sm" data-act="give" data-i="${a}" ${!canAct || p.money < a ? 'disabled' : ''}>${fmt(a)}</button>`).join('')}</div>` : '';
     mg.innerHTML = `<h4>Tài sản của bạn</h4>${giveRow}${jailRow}${rows}`;
   } else mg.style.display = 'none';
+  placeBig();
 }
 function refreshUI() { renderPlayers(); renderActions(); }
 
@@ -2016,7 +2042,7 @@ async function setup() {
       <div class="sOnRow" id="onStart">
         <button type="button" class="sBtn" id="mkRoom">✨ Tạo phòng mới</button>
         <span class="sOr">hoặc</span>
-        <input id="codeIn" class="sCode" maxlength="4" placeholder="MÃ" autocomplete="off">
+        <input id="codeIn" class="sCode" maxlength="8" placeholder="MÃ" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" lang="en" inputmode="text">
         <button type="button" class="sBtn alt" id="joinBtn">Vào phòng</button>
       </div>
       <div class="sOnInfo" id="onInfo"></div>
@@ -2309,8 +2335,15 @@ async function setup() {
     const A = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
     enterRoom('host', Array.from({ length: 4 }, () => A[Math.floor(Math.random() * A.length)]).join(''));
   };
-  $('codeIn').oninput = e => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); };
-  const joinIt = () => { const c = $('codeIn').value; if (c.length === 4) enterRoom('guest', c); else $('onInfo').innerHTML = '<span class="err">Mã phòng gồm 4 ký tự.</span>'; };
+  // Mã phòng: bỏ dấu tiếng Việt (bộ gõ Telex/VNI vẫn gõ được), chỉ giữ A–Z và 0–9
+  const cleanCode = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[đĐ]/g, 'D').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
+  let composing = false;
+  const fixCode = () => { const el = $('codeIn'), v = cleanCode(el.value); if (el.value !== v) el.value = v; };
+  $('codeIn').addEventListener('compositionstart', () => { composing = true; });
+  $('codeIn').addEventListener('compositionend', () => { composing = false; fixCode(); });
+  $('codeIn').oninput = e => { if (!composing && !e.isComposing) fixCode(); };
+  $('codeIn').addEventListener('blur', fixCode);
+  const joinIt = () => { fixCode(); const c = $('codeIn').value; if (c.length === 4) enterRoom('guest', c); else $('onInfo').innerHTML = '<span class="err">Mã phòng gồm 4 ký tự.</span>'; };
   $('joinBtn').onclick = joinIt;
   $('codeIn').onkeydown = e => { if (e.key === 'Enter') joinIt(); };
 
