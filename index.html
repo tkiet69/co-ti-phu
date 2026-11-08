@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="author" content="kietntt">
+<meta name="copyright" content="© 2026 kietntt">
 <title>Cờ Tỉ Phú Việt Nam 3D</title>
 <style>
   :root { --red:#c62828; --gold:#f9c74f; --ink:#1d1d1f; --panel:rgba(255,255,255,.94); }
@@ -219,6 +221,11 @@
     filter:drop-shadow(0 4px 0 rgba(0,0,0,.35)); }
   .sStar { display:block; text-align:center; font-size:34px; color:#f9c74f; filter:drop-shadow(0 0 12px rgba(249,199,79,.7)); }
   .sSub { text-align:center; opacity:.85; margin:8px auto 24px; max-width:660px; font-size:15px; line-height:1.5; }
+  .sCopy { text-align:center; margin:22px 0 0; font-size:13px; opacity:.7; letter-spacing:.3px; }
+  .sCopy b { color:#f9c74f; }
+  /* dấu bản quyền trong ván: góc dưới bên phải, mờ, không chặn bấm */
+  #copyMark { position:fixed; right:10px; bottom:6px; z-index:4; font-size:11px; font-weight:700; color:#fff; opacity:.6;
+    text-shadow:0 1px 3px rgba(0,0,0,.7); pointer-events:none; letter-spacing:.3px; }
   .sModes { display:flex; gap:14px; justify-content:center; margin-bottom:10px; flex-wrap:wrap; }
   .sMode { flex:1; max-width:360px; min-width:230px; background:rgba(255,255,255,.07); border:2px solid rgba(255,255,255,.16);
     border-radius:18px; padding:14px 18px; cursor:pointer; display:flex; gap:14px; align-items:center; transition:.2s; }
@@ -363,6 +370,7 @@
     @keyframes sheetUp { from { transform:translateY(40px); opacity:0; } to { transform:none; opacity:1; } }
     #camBtn { left:auto; right:10px; }
     #sndBox { left:auto; right:10px; }
+    #copyMark { right:auto; left:10px; bottom:auto; font-size:10px; }
     #chatPanel { left:8px; right:8px; bottom:8px; width:auto; max-height:72vh; z-index:14; box-shadow:0 -6px 30px rgba(0,0,0,.35); }
     #chatLog { max-height:26vh; }
     .emo { font-size:20px; }
@@ -402,6 +410,7 @@
 <div id="toast"></div>
 <div id="cardOverlay"></div>
 <div id="hint">Space: tung xúc xắc / kết thúc lượt · Kéo để xoay · Cuộn để zoom · Bấm vào ô để xem thông tin</div>
+<div id="copyMark">© kietntt</div>
 <div id="modal"><div id="modalBox"></div></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -1886,6 +1895,7 @@ function placeBig() {
   } else b.style.top = '';
   $('camBtn').style.top = mobile ? (plBottom + 12) + 'px' : '';
   $('sndBox').style.top = mobile ? (plBottom + 62) + 'px' : '';
+  $('copyMark').style.top = mobile ? (plBottom + 4) + 'px' : '';
   // thông báo nổi: máy tính → ngay dưới nút lớn; điện thoại → ngay dưới thanh người chơi
   const r = b.getBoundingClientRect();
   $('toast').style.top = (mobile ? plBottom + 10 : r.height ? r.bottom + 10 : 16) + 'px';
@@ -2715,6 +2725,7 @@ async function setup() {
         </div>
       </div>`).join('')}
     </div>
+    <div class="sCopy">© 2026 <b>kietntt</b> · Cờ Tỉ Phú Việt Nam 3D</div>
   </div>`;
   document.body.appendChild(ov);
   // nút bắt đầu đặt ngoài #setup (backdrop-filter làm position:fixed bên trong bị lệch)
