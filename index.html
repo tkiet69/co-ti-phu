@@ -157,7 +157,7 @@
 
   #tileInfo { position:fixed; left:12px; bottom:12px; width:250px; z-index:6; display:none; }
   #tileInfo.show { display:block; }
-  #camBtn { display:none; position:fixed; right:10px; z-index:7; width:42px; height:42px; border-radius:50%; border:none; cursor:pointer;
+  #camBtn { display:block; position:fixed; left:254px; top:12px; z-index:7; width:42px; height:42px; border-radius:50%; border:none; cursor:pointer;
     background:rgba(255,255,255,.94); box-shadow:0 2px 8px rgba(0,0,0,.3); font-size:20px; }
   #toast { position:fixed; left:50%; top:16px; transform:translateX(-50%); background:rgba(20,20,20,.9); color:#fff; padding:10px 16px; border-radius:10px; z-index:15; font-weight:600; max-width:90vw; text-align:center; opacity:0; transition:opacity .25s; pointer-events:none; }
   #toast.show { opacity:1; }
@@ -314,7 +314,7 @@
     #tileInfo { top:auto; bottom:8px; left:8px; right:8px; width:auto; z-index:15; max-height:62vh; overflow:auto;
       box-shadow:0 -6px 30px rgba(0,0,0,.35); animation:sheetUp .22s ease-out; }
     @keyframes sheetUp { from { transform:translateY(40px); opacity:0; } to { transform:none; opacity:1; } }
-    #camBtn { display:block; }
+    #camBtn { left:auto; right:10px; }
     #hint { display:none; }
   }
 </style>
@@ -332,7 +332,7 @@
   <button class="btn alt sm" id="logShow">📜 Nhật ký</button>
 </div>
 <div class="panel" id="tileInfo"></div>
-<button id="camBtn" title="Xem cả bàn cờ" onclick="setFollow(!cam.follow)">🗺️</button>
+<button id="camBtn" title="Đổi chế độ camera" onclick="cycleCam()">🎯</button>
 <div id="bigAction"></div>
 <div id="toast"></div>
 <div id="cardOverlay"></div>
@@ -1148,24 +1148,51 @@ function animate() {
   controls.update();
   renderer.render(scene, camera);
 }
-// Điện thoại: camera phóng to và bám theo quân cờ đang đi (bấm 🎯/🗺️ để đổi). Tự dừng khi người chơi tự kéo/xoay bàn.
-const cam = { follow: innerWidth < 760, userUntil: 0 };
+// Các chế độ camera (nút tròn, bấm để đổi lần lượt):
+//  🎯 follow — phóng to, bám theo quân cờ đang đi
+//  🔄 rotate — xoay cả bàn cờ để cạnh có quân cờ đang đi luôn ở phía trước mặt
+//  🗺️ board  — đứng yên, thấy cả bàn
+// Tự dừng khi người chơi tự kéo/xoay bàn, 5 giây sau khi thả tay thì chạy lại.
+const CAM_MODES = { follow: ['🎯', 'Bám theo quân cờ'], rotate: ['🔄', 'Xoay bàn theo người chơi'], board: ['🗺️', 'Xem cả bàn cờ'] };
+const CAM_ORDER = ['follow', 'rotate', 'board'];
+const cam = { mode: (() => { try { const m = localStorage.getItem('ctp-cam'); if (CAM_MODES[m]) return m; } catch (e) {} return innerWidth < 760 ? 'follow' : 'board'; })(), userUntil: 0, ang: 0 };
 controls.addEventListener('start', () => { cam.userUntil = Infinity; });
 controls.addEventListener('end', () => { cam.userUntil = performance.now() + 5000; });
-const _goal = new THREE.Vector3(), _want = new THREE.Vector3();
+const _goal = new THREE.Vector3(), _want = new THREE.Vector3(), DESK_DIR = new THREE.Vector3(0, 15, 14).normalize();
+const baseDir = () => innerWidth < 760 ? CAM_DIR : DESK_DIR;
+const baseDist = () => innerWidth < 760 ? camDist() : 20.5;
 function followCam() {
-  if (!cam.follow || innerWidth >= 760 || performance.now() < cam.userUntil) return;
+  if (cam.mode === 'board' || performance.now() < cam.userUntil) return;
   const p = cur(); if (!p || !p.mesh || state.phase === 'idle' || state.phase === 'over') return;
-  _goal.set(THREE.MathUtils.clamp(p.mesh.position.x, -3.6, 3.6), 0, THREE.MathUtils.clamp(p.mesh.position.z, -3.6, 3.6));
-  _want.copy(_goal).addScaledVector(CAM_DIR, camDist() * 0.55);
+  const px = p.mesh.position.x, pz = p.mesh.position.z, dir = baseDir();
+  if (cam.mode === 'follow') {
+    _goal.set(THREE.MathUtils.clamp(px, -3.6, 3.6), 0, THREE.MathUtils.clamp(pz, -3.6, 3.6));
+    _want.copy(_goal).addScaledVector(dir, baseDist() * 0.55);
+  } else {
+    // cạnh bàn của quân cờ: 0 dưới (z+), 1 trái (x−), 2 trên (z−), 3 phải (x+) → góc quay camera
+    const side = Math.floor(((p.pos % 40) + 40) % 40 / 10);
+    let d = -side * Math.PI / 2 - cam.ang;
+    d = Math.atan2(Math.sin(d), Math.cos(d)); // quay theo đường ngắn nhất
+    cam.ang += d * 0.045;
+    const h = dir.z, v = dir.y;
+    _goal.set(px * 0.35, 0, pz * 0.35);
+    _want.set(_goal.x + Math.sin(cam.ang) * h * baseDist() * 0.8, v * baseDist() * 0.8, _goal.z + Math.cos(cam.ang) * h * baseDist() * 0.8);
+  }
   controls.target.lerp(_goal, 0.06);
   camera.position.lerp(_want, 0.06);
 }
-function setFollow(on) {
-  cam.follow = on; cam.userUntil = 0;
-  if (!on) { placeCamera(); controls.target.set(0, 0, 0); controls.update(); }
-  const b = $('camBtn'); if (b) { b.textContent = on ? '🗺️' : '🎯'; b.title = on ? 'Xem cả bàn cờ' : 'Phóng to theo quân cờ'; }
+function setCamMode(m) {
+  cam.mode = m; cam.userUntil = 0;
+  try { localStorage.setItem('ctp-cam', m); } catch (e) {}
+  if (m === 'board') { placeCamera(); controls.target.set(0, 0, 0); controls.update(); }
+  if (m === 'rotate') { const a = Math.atan2(camera.position.x - controls.target.x, camera.position.z - controls.target.z); cam.ang = a; }
+  const b = $('camBtn'); if (b) { b.textContent = CAM_MODES[m][0]; b.title = 'Camera: ' + CAM_MODES[m][1] + ' (bấm để đổi)'; }
 }
+function cycleCam() {
+  const m = CAM_ORDER[(CAM_ORDER.indexOf(cam.mode) + 1) % CAM_ORDER.length];
+  setCamMode(m); toast(`${CAM_MODES[m][0]} Camera: ${CAM_MODES[m][1]}`, 1400);
+}
+setCamMode(cam.mode);
 let lastNarrow = innerWidth < 760, lastPortrait = innerWidth < innerHeight;
 addEventListener('resize', () => {
   camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight);
@@ -1522,7 +1549,7 @@ function placeBig() {
     const sideTop = $('side').getBoundingClientRect().top;
     b.style.top = Math.max(plBottom + 10, sideTop - b.offsetHeight - 10) + 'px';
   } else b.style.top = '';
-  $('camBtn').style.top = (plBottom + 12) + 'px';
+  $('camBtn').style.top = mobile ? (plBottom + 12) + 'px' : '';
   // thông báo nổi: máy tính → ngay dưới nút lớn; điện thoại → ngay dưới thanh người chơi
   const r = b.getBoundingClientRect();
   $('toast').style.top = (mobile ? plBottom + 10 : r.height ? r.bottom + 10 : 16) + 'px';
