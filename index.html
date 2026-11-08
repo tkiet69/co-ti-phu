@@ -2320,8 +2320,7 @@ function chatRecv(d, peer) {
   } else if (d.t === 'throw' && TEASE[d.item] && Number.isInteger(d.to)) {
     const to = byIdx(d.to); if (!to || !from || to === from || to.bankrupt) return;
     const [ic, , verb] = TEASE[d.item];
-    chatLine(`${ic} ${pn(from)} ${verb} ${pn(to)}!`, from, 'sys');
-    log(`${ic} ${pn(from)} ${verb} ${pn(to)}!`);
+    chatLine(`${ic} ${pn(from)} ${verb} ${pn(to)}!`, from, 'sys'); // chỉ ghi trong khung chat, không ghi vào nhật ký
     throwFx(from, to, d.item);
     // máy bị chọc thì phản ứng lại (chỉ một máy quyết định: chơi trên máy này, hoặc chủ phòng)
     if (!to.human && (!NET.online || NET.role === 'host') && Math.random() < 0.8) setTimeout(() => {
