@@ -157,6 +157,11 @@
 
   #tileInfo { position:fixed; left:12px; bottom:12px; width:250px; z-index:6; display:none; }
   #tileInfo.show { display:block; }
+  #sndBox { position:fixed; left:254px; top:62px; z-index:7; display:flex; flex-direction:column; gap:8px; }
+  .roundBtn { width:42px; height:42px; border-radius:50%; border:none; cursor:pointer; background:rgba(255,255,255,.94);
+    box-shadow:0 2px 8px rgba(0,0,0,.3); font-size:19px; position:relative; }
+  .roundBtn.off { opacity:.55; }
+  .roundBtn.off::after { content:''; position:absolute; left:9px; right:9px; top:50%; height:3px; background:#c62828; transform:rotate(-45deg); border-radius:2px; }
   #camBtn { display:block; position:fixed; left:254px; top:12px; z-index:7; width:42px; height:42px; border-radius:50%; border:none; cursor:pointer;
     background:rgba(255,255,255,.94); box-shadow:0 2px 8px rgba(0,0,0,.3); font-size:20px; }
   #toast { position:fixed; left:50%; top:16px; transform:translateX(-50%); background:rgba(20,20,20,.9); color:#fff; padding:10px 16px; border-radius:10px; z-index:15; font-weight:600; max-width:90vw; text-align:center; opacity:0; transition:opacity .25s; pointer-events:none; }
@@ -315,6 +320,8 @@
       box-shadow:0 -6px 30px rgba(0,0,0,.35); animation:sheetUp .22s ease-out; }
     @keyframes sheetUp { from { transform:translateY(40px); opacity:0; } to { transform:none; opacity:1; } }
     #camBtn { left:auto; right:10px; }
+    #sndBox { left:auto; right:10px; }
+    .roundBtn { width:38px; height:38px; font-size:17px; }
     #hint { display:none; }
   }
 </style>
@@ -333,6 +340,10 @@
 </div>
 <div class="panel" id="tileInfo"></div>
 <button id="camBtn" title="Đổi chế độ camera" onclick="cycleCam()">🎯</button>
+<div id="sndBox">
+  <button class="roundBtn" id="musicBtn" title="Tắt nhạc" onclick="audioInit(); setMusic(!SND.music)">🎵</button>
+  <button class="roundBtn" id="sfxBtn" title="Tắt tiếng xúc xắc" onclick="audioInit(); setSfx(!SND.sfx)">🔊</button>
+</div>
 <div id="bigAction"></div>
 <div id="toast"></div>
 <div id="cardOverlay"></div>
@@ -969,7 +980,120 @@ const dice = [0,1].map(k => {
 const tweens = [];
 function tween(ms, fn) { return new Promise(res => tweens.push({ start: performance.now(), ms, fn, res })); }
 
+// ================== ÂM THANH (tự tạo bằng Web Audio, không cần file) ==================
+const SND = { ctx: null, music: true, sfx: true, musicGain: null, sfxGain: null, verb: null, nextBar: 0, bar: 0, noise: null };
+try { SND.music = localStorage.getItem('ctp-music') !== '0'; SND.sfx = localStorage.getItem('ctp-sfx') !== '0'; } catch (e) {}
+const midiHz = m => 440 * Math.pow(2, (m - 69) / 12);
+function audioInit() {
+  if (SND.ctx) { if (SND.ctx.state === 'suspended') SND.ctx.resume(); return; }
+  const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+  const ctx = SND.ctx = new AC();
+  const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -18; comp.connect(ctx.destination);
+  SND.musicGain = ctx.createGain(); SND.musicGain.gain.value = SND.music ? 0.32 : 0; SND.musicGain.connect(comp);
+  SND.sfxGain = ctx.createGain(); SND.sfxGain.gain.value = SND.sfx ? 0.9 : 0; SND.sfxGain.connect(comp);
+  // tiếng vang mềm cho nhạc
+  const len = ctx.sampleRate * 2.2, ir = ctx.createBuffer(2, len, ctx.sampleRate);
+  for (let c = 0; c < 2; c++) { const d = ir.getChannelData(c); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3); }
+  SND.verb = ctx.createConvolver(); SND.verb.buffer = ir;
+  const verbGain = ctx.createGain(); verbGain.gain.value = 0.35; SND.verb.connect(verbGain); verbGain.connect(SND.musicGain);
+  // nhiễu trắng dùng chung (trống, tiếng xúc xắc, tiếng rè đĩa than)
+  SND.noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+  const nd = SND.noise.getChannelData(0); for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+  vinyl();
+  SND.nextBar = ctx.currentTime + 0.2;
+  setInterval(scheduleMusic, 200);
+}
+// --- Nhạc nền lo-fi: Fmaj7 → Em7 → Dm7 → Cmaj7, 72 BPM ---
+const LOFI = { bpm: 72, chords: [[53, 57, 60, 64], [52, 55, 59, 62], [50, 53, 57, 60], [48, 52, 55, 59]], bass: [41, 40, 38, 36], scale: [72, 74, 76, 79, 81, 84] };
+function scheduleMusic() {
+  const ctx = SND.ctx; if (!ctx || !SND.music) { if (ctx) SND.nextBar = Math.max(SND.nextBar, ctx.currentTime + 0.1); return; }
+  const beat = 60 / LOFI.bpm, barLen = beat * 4;
+  while (SND.nextBar < ctx.currentTime + 0.8) {
+    const t0 = SND.nextBar, k = SND.bar % 4, ch = LOFI.chords[k];
+    // phím điện (Rhodes) — rải nhẹ ở phách 1 và nửa sau phách 2
+    [0, beat * 1.5].forEach((off, j) => ch.forEach((n, i) => epiano(midiHz(n + (j && i === 3 ? 12 : 0)), t0 + off + i * 0.018, beat * (j ? 2.2 : 1.6), j ? 0.05 : 0.07)));
+    // bass
+    bassNote(midiHz(LOFI.bass[k]), t0, beat * 1.8); bassNote(midiHz(LOFI.bass[k] + 7), t0 + beat * 2.5, beat * 1.2);
+    // trống: kick 1 & "và" của 2, snare 2 & 4, hi-hat nốt móc đơn có swing
+    kick(t0); kick(t0 + beat * 2.5); snare(t0 + beat); snare(t0 + beat * 3);
+    for (let e = 0; e < 8; e++) hat(t0 + e * beat / 2 + (e % 2 ? beat * 0.09 : 0), e % 2 ? 0.025 : 0.04);
+    // giai điệu thưa thớt
+    for (let e = 0; e < 8; e++) if (Math.random() < 0.22) {
+      const n = LOFI.scale[Math.floor(Math.random() * LOFI.scale.length)];
+      lead(midiHz(n), t0 + e * beat / 2 + (e % 2 ? beat * 0.09 : 0), beat * 0.9);
+    }
+    SND.bar++; SND.nextBar += barLen;
+  }
+}
+function env(g, t, peak, a, d) { g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(peak, t + a); g.gain.exponentialRampToValueAtTime(0.0001, t + a + d); }
+function epiano(f, t, dur, vol) {
+  const ctx = SND.ctx, g = ctx.createGain(), lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1700;
+  [[f, 'sine', 1], [f * 2.003, 'triangle', 0.18], [f * 0.998, 'sine', 0.5]].forEach(([fr, type, a]) => {
+    const o = ctx.createOscillator(), og = ctx.createGain(); o.type = type; o.frequency.value = fr; og.gain.value = a;
+    o.connect(og); og.connect(lp); o.start(t); o.stop(t + dur + 0.1);
+  });
+  lp.connect(g); env(g, t, vol, 0.012, dur); g.connect(SND.musicGain); g.connect(SND.verb);
+}
+function bassNote(f, t, dur) {
+  const ctx = SND.ctx, o = ctx.createOscillator(), g = ctx.createGain(); o.type = 'sine'; o.frequency.value = f;
+  o.connect(g); env(g, t, 0.22, 0.02, dur); g.connect(SND.musicGain); o.start(t); o.stop(t + dur + 0.1);
+}
+function lead(f, t, dur) {
+  const ctx = SND.ctx, o = ctx.createOscillator(), g = ctx.createGain(), lp = ctx.createBiquadFilter();
+  o.type = 'triangle'; o.frequency.value = f; lp.type = 'lowpass'; lp.frequency.value = 2400;
+  o.connect(lp); lp.connect(g); env(g, t, 0.035, 0.03, dur); g.connect(SND.musicGain); g.connect(SND.verb); o.start(t); o.stop(t + dur + 0.1);
+}
+function kick(t) {
+  const ctx = SND.ctx, o = ctx.createOscillator(), g = ctx.createGain(); o.type = 'sine';
+  o.frequency.setValueAtTime(110, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.18);
+  o.connect(g); env(g, t, 0.28, 0.005, 0.28); g.connect(SND.musicGain); o.start(t); o.stop(t + 0.35);
+}
+function noiseHit(t, type, freq, q, vol, dur, out) {
+  const ctx = SND.ctx, s = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+  s.buffer = SND.noise; f.type = type; f.frequency.value = freq; f.Q.value = q;
+  s.connect(f); f.connect(g); env(g, t, vol, 0.002, dur); g.connect(out);
+  s.start(t, Math.random() * 0.5); s.stop(t + dur + 0.05);
+}
+const snare = t => noiseHit(t, 'bandpass', 1800, 0.8, 0.07, 0.16, SND.musicGain);
+const hat = (t, v) => noiseHit(t, 'highpass', 7500, 0.7, v, 0.04, SND.musicGain);
+// tiếng rè đĩa than rất nhỏ, chạy liên tục
+function vinyl() {
+  const ctx = SND.ctx, s = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+  s.buffer = SND.noise; s.loop = true; f.type = 'bandpass'; f.frequency.value = 3200; f.Q.value = 0.6; g.gain.value = 0.012;
+  s.connect(f); f.connect(g); g.connect(SND.musicGain); s.start();
+  setInterval(() => { if (SND.music && Math.random() < 0.6) noiseHit(ctx.currentTime + Math.random() * 0.3, 'highpass', 3000, 1, 0.05, 0.008, SND.musicGain); }, 350);
+}
+// --- Tiếng xúc xắc: lắc lạch cạch trong tay, rồi nảy vài lần trên bàn (khớp hoạt ảnh 1 giây) ---
+function sfxDice() {
+  const ctx = SND.ctx; if (!ctx || !SND.sfx) return;
+  if (ctx.state === 'suspended') ctx.resume();
+  const t = ctx.currentTime + 0.01;
+  const click = (tt, vol, f) => {
+    noiseHit(tt, 'bandpass', f, 3, vol, 0.035, SND.sfxGain);
+    const o = ctx.createOscillator(), g = ctx.createGain(); o.type = 'triangle'; o.frequency.setValueAtTime(f / 3.2, tt); o.frequency.exponentialRampToValueAtTime(f / 6, tt + 0.05);
+    o.connect(g); env(g, tt, vol * 0.6, 0.002, 0.06); g.connect(SND.sfxGain); o.start(tt); o.stop(tt + 0.1);
+  };
+  for (let i = 0; i < 9; i++) click(t + i * 0.034 + Math.random() * 0.015, 0.16 + Math.random() * 0.1, 2600 + Math.random() * 1400); // lắc
+  [[0.36, 0.5], [0.4, 0.42], [0.62, 0.3], [0.66, 0.26], [0.8, 0.16], [0.83, 0.13], [0.91, 0.08], [0.95, 0.06]]
+    .forEach(([d, v]) => click(t + d + Math.random() * 0.02, v, 1500 + Math.random() * 900)); // nảy trên bàn (2 viên)
+}
+function setMusic(on) {
+  SND.music = on; try { localStorage.setItem('ctp-music', on ? '1' : '0'); } catch (e) {}
+  if (SND.ctx) SND.musicGain.gain.setTargetAtTime(on ? 0.32 : 0, SND.ctx.currentTime, 0.3);
+  const b = $('musicBtn'); if (b) { b.classList.toggle('off', !on); b.title = on ? 'Tắt nhạc' : 'Bật nhạc'; }
+}
+function setSfx(on) {
+  SND.sfx = on; try { localStorage.setItem('ctp-sfx', on ? '1' : '0'); } catch (e) {}
+  if (SND.ctx) SND.sfxGain.gain.value = on ? 0.9 : 0;
+  const b = $('sfxBtn'); if (b) { b.classList.toggle('off', !on); b.textContent = on ? '🔊' : '🔇'; b.title = on ? 'Tắt tiếng xúc xắc' : 'Bật tiếng xúc xắc'; }
+}
+// trình duyệt chỉ cho phát âm thanh sau khi người dùng chạm/bấm lần đầu
+['pointerdown', 'keydown', 'touchstart'].forEach(ev => addEventListener(ev, audioInit, { passive: true }));
+addEventListener('DOMContentLoaded', () => { setMusic(SND.music); setSfx(SND.sfx); });
+if (document.readyState !== 'loading') setTimeout(() => { setMusic(SND.music); setSfx(SND.sfx); }, 0);
+
 async function rollDice() {
+  sfxDice();
   const v = [1 + Math.floor(rng()*6), 1 + Math.floor(rng()*6)];
   await Promise.all(dice.map((d, k) => {
     const [fx, fz] = FACE_ROT[v[k]], fy = Math.random()*Math.PI*2;
@@ -1550,6 +1674,7 @@ function placeBig() {
     b.style.top = Math.max(plBottom + 10, sideTop - b.offsetHeight - 10) + 'px';
   } else b.style.top = '';
   $('camBtn').style.top = mobile ? (plBottom + 12) + 'px' : '';
+  $('sndBox').style.top = mobile ? (plBottom + 62) + 'px' : '';
   // thông báo nổi: máy tính → ngay dưới nút lớn; điện thoại → ngay dưới thanh người chơi
   const r = b.getBoundingClientRect();
   $('toast').style.top = (mobile ? plBottom + 10 : r.height ? r.bottom + 10 : 16) + 'px';
